@@ -1,0 +1,5 @@
+{
+  "name": "Perspective Illusion Puzzle",
+  "description": "A 3D perspective illusion puzzle game inspired by Monument Valley, built with Three.js.",
+  "requestFramePermissions": []
+}
