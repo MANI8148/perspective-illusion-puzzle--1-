@@ -13,6 +13,10 @@ export class SceneManager {
   private composer: EffectComposer;
   private illusionSystem: IllusionSystem;
   private blockTexture: THREE.Texture;
+  private woodTexture: THREE.Texture;
+  private stoneTexture: THREE.Texture;
+  private metalTexture: THREE.Texture;
+  private grassTexture: THREE.Texture;
   private soundManager: SoundManager;
   
   private nodes: LevelNode[] = [];
@@ -61,12 +65,16 @@ export class SceneManager {
     this.onLevelComplete = onLevelComplete;
     this.soundManager = soundManager;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#e0f7fa');
-    this.scene.fog = new THREE.FogExp2('#e0f7fa', 0.02);
+    this.scene.background = new THREE.Color('#87CEEB');
+    this.scene.fog = new THREE.FogExp2('#87CEEB', 0.015);
 
     this.createSky();
 
     this.blockTexture = this.createNoiseTexture();
+    this.woodTexture = this.createWoodTexture();
+    this.stoneTexture = this.createStoneTexture();
+    this.metalTexture = this.createMetalTexture();
+    this.grassTexture = this.createGrassTexture();
 
     console.log('Container dimensions:', container.clientWidth, container.clientHeight);
     
@@ -130,17 +138,8 @@ export class SceneManager {
     dirLight.shadow.camera.bottom = -20;
     this.scene.add(dirLight);
 
-    // Player
-    const playerGeo = new THREE.CapsuleGeometry(0.25, 0.4, 4, 16);
-    const playerMat = new THREE.MeshStandardMaterial({ 
-      color: '#ff4757',
-      roughness: 0.3,
-      metalness: 0.2,
-      map: this.blockTexture,
-      emissive: '#ff4757',
-      emissiveIntensity: 0.8
-    });
-    this.player = new THREE.Mesh(playerGeo, playerMat);
+    // Player - Man-shaped figure
+    this.player = this.createManFigure();
     this.player.castShadow = true;
     this.scene.add(this.player);
 
@@ -155,7 +154,7 @@ export class SceneManager {
     trailGeo.setAttribute('alpha', new THREE.BufferAttribute(trailOpacities, 1));
 
     const trailMat = new THREE.PointsMaterial({
-      color: '#ff4757',
+      color: '#ff6b6b',
       size: 0.15,
       transparent: true,
       opacity: 0.6,
@@ -234,8 +233,8 @@ export class SceneManager {
     const skyGeo = new THREE.SphereGeometry(100, 32, 32);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        topColor: { value: new THREE.Color('#e0f7fa') },
-        bottomColor: { value: new THREE.Color('#ffffff') },
+        topColor: { value: new THREE.Color('#FFD700') },
+        bottomColor: { value: new THREE.Color('#87CEEB') },
         offset: { value: 33 },
         exponent: { value: 0.6 }
       },
@@ -307,6 +306,163 @@ export class SceneManager {
     return texture;
   }
 
+  private createWoodTexture(): THREE.Texture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+
+    // Base wood color
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(0, 0, size, size);
+
+    // Add wood grain lines
+    ctx.strokeStyle = '#654321';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < size; i += 8) {
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(size, i + Math.sin(i * 0.1) * 10);
+      ctx.stroke();
+    }
+
+    // Add some noise
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 20;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2, 2);
+    return texture;
+  }
+
+  private createStoneTexture(): THREE.Texture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+
+    // Base stone color
+    ctx.fillStyle = '#708090';
+    ctx.fillRect(0, 0, size, size);
+
+    // Add stone cracks and variations
+    ctx.strokeStyle = '#2F4F4F';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 20; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.random() * 50 - 25, y + Math.random() * 50 - 25);
+      ctx.stroke();
+    }
+
+    // Add noise for texture
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 30;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 1);
+    return texture;
+  }
+
+  private createMetalTexture(): THREE.Texture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+
+    // Base metal color
+    ctx.fillStyle = '#C0C0C0';
+    ctx.fillRect(0, 0, size, size);
+
+    // Add metallic sheen
+    const gradient = ctx.createLinearGradient(0, 0, size, size);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+    gradient.addColorStop(0.5, 'rgba(192, 192, 192, 0)');
+    gradient.addColorStop(1, 'rgba(128, 128, 128, 0.2)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    // Add subtle scratches
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 10; i++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * size, Math.random() * size);
+      ctx.lineTo(Math.random() * size, Math.random() * size);
+      ctx.stroke();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 1);
+    return texture;
+  }
+
+  private createGrassTexture(): THREE.Texture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+
+    // Base grass color
+    ctx.fillStyle = '#228B22';
+    ctx.fillRect(0, 0, size, size);
+
+    // Add grass blades
+    ctx.strokeStyle = '#32CD32';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 100; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.random() * 10 - 5, y - Math.random() * 15);
+      ctx.stroke();
+    }
+
+    // Add some variation
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 15;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2, 2);
+    return texture;
+  }
+
   private createParticles() {
     const particleCount = 100;
     const geometry = new THREE.BufferGeometry();
@@ -366,6 +522,86 @@ export class SceneManager {
       leaf.rotation.set(Math.random(), Math.random(), Math.random());
       group.add(leaf);
     }
+
+    return group;
+  }
+
+  private createManFigure(): THREE.Group {
+    const group = new THREE.Group();
+    group.name = 'player';
+
+    // Body (torso)
+    const bodyGeo = new THREE.BoxGeometry(0.3, 0.5, 0.15);
+    const bodyMat = new THREE.MeshStandardMaterial({ 
+      color: '#ff6b6b',
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.25;
+    body.castShadow = true;
+    group.add(body);
+
+    // Head
+    const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
+    const headMat = new THREE.MeshStandardMaterial({ 
+      color: '#fdbcb4',
+      roughness: 0.8,
+      metalness: 0.0
+    });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = 0.575;
+    head.castShadow = true;
+    group.add(head);
+
+    // Arms
+    const armGeo = new THREE.CapsuleGeometry(0.08, 0.3, 4, 8);
+    const armMat = new THREE.MeshStandardMaterial({ 
+      color: '#ff6b6b',
+      roughness: 0.7,
+      metalness: 0.1
+    });
+
+    const leftArm = new THREE.Mesh(armGeo, armMat);
+    leftArm.position.set(-0.2, 0.25, 0);
+    leftArm.rotation.z = Math.PI / 6;
+    leftArm.castShadow = true;
+    group.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeo, armMat);
+    rightArm.position.set(0.2, 0.25, 0);
+    rightArm.rotation.z = -Math.PI / 6;
+    rightArm.castShadow = true;
+    group.add(rightArm);
+
+    // Legs
+    const legGeo = new THREE.CapsuleGeometry(0.1, 0.4, 4, 8);
+    const legMat = new THREE.MeshStandardMaterial({ 
+      color: '#2c3e50',
+      roughness: 0.8,
+      metalness: 0.0
+    });
+
+    const leftLeg = new THREE.Mesh(legGeo, legMat);
+    leftLeg.position.set(-0.1, -0.2, 0);
+    leftLeg.castShadow = true;
+    group.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeo, legMat);
+    rightLeg.position.set(0.1, -0.2, 0);
+    rightLeg.castShadow = true;
+    group.add(rightLeg);
+
+    // Add a subtle glow effect
+    const glowMat = new THREE.MeshStandardMaterial({ 
+      color: '#ff4757',
+      emissive: '#ff4757',
+      emissiveIntensity: 0.3,
+      transparent: true,
+      opacity: 0.1
+    });
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), glowMat);
+    group.add(glow);
 
     return group;
   }
@@ -465,11 +701,22 @@ export class SceneManager {
       baseColor.g = Math.min(1, Math.max(0, baseColor.g + jitter));
       baseColor.b = Math.min(1, Math.max(0, baseColor.b + jitter));
 
+      // Choose texture based on block type or randomly
+      let texture = this.blockTexture;
+      if (block.type === 'cube') {
+        const textures = [this.blockTexture, this.woodTexture, this.stoneTexture, this.metalTexture, this.grassTexture];
+        texture = textures[Math.floor(Math.random() * textures.length)];
+      } else if (block.type === 'pillar') {
+        texture = this.stoneTexture;
+      } else if (block.type === 'rotating') {
+        texture = this.metalTexture;
+      }
+
       const mat = new THREE.MeshStandardMaterial({ 
         color: baseColor,
-        roughness: 0.8,
-        metalness: 0.1,
-        map: this.blockTexture,
+        roughness: block.type === 'rotating' ? 0.2 : 0.8,
+        metalness: block.type === 'rotating' ? 0.8 : 0.1,
+        map: texture,
         flatShading: false
       });
       

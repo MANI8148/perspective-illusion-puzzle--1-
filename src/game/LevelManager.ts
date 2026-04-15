@@ -346,6 +346,120 @@ export const LEVELS: LevelData[] = [
       { type: 'pillar', position: [1, 1, -4], color: '#dfe6e9', nodes: [] },
       { type: 'pillar', position: [0, 0, -4], color: '#dfe6e9', nodes: [] },
       { type: 'pillar', position: [0, 1, -4], color: '#dfe6e9', nodes: [] },
+    ]  },
+  {
+    id: 'level-10',
+    name: 'The Crystal Maze',
+    startNodeId: 's1',
+    goalNodeId: 'goal',
+    blocks: [
+      // Start Area
+      { type: 'cube', position: [0, 0, 0], color: '#e91e63', nodes: [{ id: 's1', offset: [0, 0.5, 0], connections: ['s2'] }] },
+      { type: 'cube', position: [1, 0, 0], color: '#e91e63', nodes: [{ id: 's2', offset: [0, 0.5, 0], connections: ['s1', 'p1'] }] },
+      
+      // Crystal Path
+      { type: 'cube', position: [2, 0, 0], color: '#9c27b0', nodes: [{ id: 'p1', offset: [0, 0.5, 0], connections: ['s2', 'p2'] }] },
+      { type: 'cube', position: [3, 0, 0], color: '#9c27b0', nodes: [{ id: 'p2', offset: [0, 0.5, 0], connections: ['p1', 'p3'] }] },
+      { type: 'cube', position: [4, 0, 0], color: '#9c27b0', nodes: [{ id: 'p3', offset: [0, 0.5, 0], connections: ['p2', 'p4'] }] },
+      
+      // Illusion Bridge (disconnected in 3D)
+      { type: 'cube', position: [4, 3, -3], color: '#00bcd4', nodes: [{ id: 'p4', offset: [0, 0.5, 0], connections: ['p3', 'p5'] }] },
+      { type: 'cube', position: [5, 3, -3], color: '#00bcd4', nodes: [{ id: 'p5', offset: [0, 0.5, 0], connections: ['p4', 'p6'] }] },
+      { type: 'cube', position: [6, 3, -3], color: '#00bcd4', nodes: [{ id: 'p6', offset: [0, 0.5, 0], connections: ['p5', 'p7'] }] },
+      
+      // Upper Crystal Chamber
+      { type: 'cube', position: [6, 3, -1], color: '#ff9800', nodes: [{ id: 'p7', offset: [0, 0.5, 0], connections: ['p6', 'p8'] }] },
+      { type: 'cube', position: [6, 3, 0], color: '#ff9800', nodes: [{ id: 'p8', offset: [0, 0.5, 0], connections: ['p7', 'p9'] }] },
+      { type: 'cube', position: [6, 3, 1], color: '#ff9800', nodes: [{ id: 'p9', offset: [0, 0.5, 0], connections: ['p8', 'goal'] }] },
+      
+      // Goal Chamber
+      { type: 'cube', position: [6, 3, 3], color: '#4caf50', nodes: [{ id: 'goal', offset: [0, 0.5, 0], connections: ['p9'] }] },
+      
+      // Decorative Crystal Pillars
+      { type: 'pillar', position: [4, 0, 0], color: '#e91e63', nodes: [] },
+      { type: 'pillar', position: [4, 1, 0], color: '#e91e63', nodes: [] },
+      { type: 'pillar', position: [4, 2, 0], color: '#e91e63', nodes: [] },
+      { type: 'pillar', position: [6, 0, -3], color: '#00bcd4', nodes: [] },
+      { type: 'pillar', position: [6, 1, -3], color: '#00bcd4', nodes: [] },
+      { type: 'pillar', position: [6, 2, -3], color: '#00bcd4', nodes: [] },
     ]
-  }
+  },
+  {
+    id: 'level-11',
+    name: 'The Floating Gardens',
+    startNodeId: 's1',
+    goalNodeId: 'goal',
+    blocks: [
+      // Ground Level
+      { type: 'cube', position: [0, 0, 0], color: '#795548', nodes: [{ id: 's1', offset: [0, 0.5, 0], connections: ['s2'] }] },
+      { type: 'cube', position: [1, 0, 0], color: '#795548', nodes: [{ id: 's2', offset: [0, 0.5, 0], connections: ['s1', 's3'] }] },
+      { type: 'cube', position: [2, 0, 0], color: '#795548', nodes: [{ id: 's3', offset: [0, 0.5, 0], connections: ['s2', 'p1'] }] },
+      
+      // First Floating Platform
+      { type: 'cube', position: [2, 2, -2], color: '#8bc34a', nodes: [{ id: 'p1', offset: [0, 0.5, 0], connections: ['s3', 'p2'] }] },
+      { type: 'cube', position: [3, 2, -2], color: '#8bc34a', nodes: [{ id: 'p2', offset: [0, 0.5, 0], connections: ['p1', 'p3'] }] },
+      { type: 'cube', position: [4, 2, -2], color: '#8bc34a', nodes: [{ id: 'p3', offset: [0, 0.5, 0], connections: ['p2', 'p4'] }] },
+      
+      // Second Floating Platform (higher)
+      { type: 'cube', position: [4, 4, -4], color: '#ffc107', nodes: [{ id: 'p4', offset: [0, 0.5, 0], connections: ['p3', 'p5'] }] },
+      { type: 'cube', position: [5, 4, -4], color: '#ffc107', nodes: [{ id: 'p5', offset: [0, 0.5, 0], connections: ['p4', 'p6'] }] },
+      { type: 'cube', position: [6, 4, -4], color: '#ffc107', nodes: [{ id: 'p6', offset: [0, 0.5, 0], connections: ['p5', 'goal'] }] },
+      
+      // Goal Platform
+      { type: 'cube', position: [6, 4, -2], color: '#f44336', nodes: [{ id: 'goal', offset: [0, 0.5, 0], connections: ['p6'] }] },
+      
+      // Supporting Pillars
+      { type: 'pillar', position: [2, 0, -2], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [2, 1, -2], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [4, 0, -2], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [4, 1, -2], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [4, 2, -2], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [4, 3, -2], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [6, 0, -4], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [6, 1, -4], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [6, 2, -4], color: '#607d8b', nodes: [] },
+      { type: 'pillar', position: [6, 3, -4], color: '#607d8b', nodes: [] },
+    ]
+  },
+  {
+    id: 'level-12',
+    name: 'The Ancient Temple',
+    startNodeId: 's1',
+    goalNodeId: 'goal',
+    blocks: [
+      // Temple Entrance
+      { type: 'cube', position: [0, 0, 0], color: '#ff5722', nodes: [{ id: 's1', offset: [0, 0.5, 0], connections: ['s2'] }] },
+      { type: 'cube', position: [1, 0, 0], color: '#ff5722', nodes: [{ id: 's2', offset: [0, 0.5, 0], connections: ['s1', 's3'] }] },
+      { type: 'cube', position: [2, 0, 0], color: '#ff5722', nodes: [{ id: 's3', offset: [0, 0.5, 0], connections: ['s2', 'p1'] }] },
+      
+      // Inner Chamber
+      { type: 'cube', position: [3, 0, 0], color: '#9e9e9e', nodes: [{ id: 'p1', offset: [0, 0.5, 0], connections: ['s3', 'p2'] }] },
+      { type: 'cube', position: [4, 0, 0], color: '#9e9e9e', nodes: [{ id: 'p2', offset: [0, 0.5, 0], connections: ['p1', 'p3'] }] },
+      { type: 'cube', position: [5, 0, 0], color: '#9e9e9e', nodes: [{ id: 'p3', offset: [0, 0.5, 0], connections: ['p2', 'p4'] }] },
+      
+      // Hidden Upper Path (Illusion)
+      { type: 'cube', position: [5, 2, -2], color: '#673ab7', nodes: [{ id: 'p4', offset: [0, 0.5, 0], connections: ['p3', 'p5'] }] },
+      { type: 'cube', position: [6, 2, -2], color: '#673ab7', nodes: [{ id: 'p5', offset: [0, 0.5, 0], connections: ['p4', 'p6'] }] },
+      { type: 'cube', position: [7, 2, -2], color: '#673ab7', nodes: [{ id: 'p6', offset: [0, 0.5, 0], connections: ['p5', 'p7'] }] },
+      
+      // Temple Altar
+      { type: 'cube', position: [8, 2, -2], color: '#3f51b5', nodes: [{ id: 'p7', offset: [0, 0.5, 0], connections: ['p6', 'goal'] }] },
+      { type: 'cube', position: [9, 2, -2], color: '#3f51b5', nodes: [{ id: 'goal', offset: [0, 0.5, 0], connections: ['p7'] }] },
+      
+      // Temple Pillars
+      { type: 'pillar', position: [3, 0, -1], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [3, 1, -1], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [5, 0, -1], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [5, 1, -1], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [7, 0, -2], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [7, 1, -2], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [9, 0, -2], color: '#795548', nodes: [] },
+      { type: 'pillar', position: [9, 1, -2], color: '#795548', nodes: [] },
+      
+      // Decorative Elements
+      { type: 'cube', position: [1, 0, -1], color: '#ff5722', nodes: [] },
+      { type: 'cube', position: [1, 0, 1], color: '#ff5722', nodes: [] },
+      { type: 'cube', position: [8, 2, -3], color: '#3f51b5', nodes: [] },
+      { type: 'cube', position: [8, 2, -1], color: '#3f51b5', nodes: [] },
+    ]  }
 ];
