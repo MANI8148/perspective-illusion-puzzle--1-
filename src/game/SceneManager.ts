@@ -5,11 +5,13 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { LevelData, LevelNode, GameState, BlockData } from './types';
 import { IllusionSystem } from './IllusionSystem';
 import { SoundManager } from './SoundManager';
+import { OpenGLRenderer } from './OpenGLRenderer';
 
 export class SceneManager {
   public scene: THREE.Scene;
   public camera: THREE.OrthographicCamera;
   public renderer: THREE.WebGLRenderer;
+  public glRenderer: OpenGLRenderer;
   private composer: EffectComposer;
   private illusionSystem: IllusionSystem;
   private blockTexture: THREE.Texture;
@@ -20,7 +22,7 @@ export class SceneManager {
   private soundManager: SoundManager;
   
   private nodes: LevelNode[] = [];
-  private player: THREE.Mesh;
+  private player: THREE.Group;
   private playerTrail: THREE.Points;
   private trailPositions: Float32Array;
   private trailIndex: number = 0;
@@ -108,6 +110,34 @@ export class SceneManager {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
     console.log('Canvas added to DOM:', this.renderer.domElement);
+
+    // Initialize OpenGL Renderer with advanced graphics pipeline
+    this.glRenderer = new OpenGLRenderer(
+      this.renderer.domElement,
+      this.scene,
+      this.camera,
+      {
+        antialias: true,
+        enableDepthTest: true,
+        enableFaceCulling: true,
+        clearColor: new THREE.Color('#87CEEB')
+      }
+    );
+    
+    // Add OpenGL lights
+    this.glRenderer.addLight({
+      type: 'directional',
+      position: new THREE.Vector3(15, 30, 10),
+      color: new THREE.Color(1, 1, 1),
+      intensity: 1.2
+    });
+    
+    this.glRenderer.addLight({
+      type: 'point',
+      position: new THREE.Vector3(-10, 15, -10),
+      color: new THREE.Color(0.7, 0.7, 1),
+      intensity: 0.8
+    });
 
     // Post-processing - temporarily disabled to debug rendering
     const renderScene = new RenderPass(this.scene, this.camera);
@@ -218,6 +248,7 @@ export class SceneManager {
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDownBound);
     this.container.removeEventListener('wheel', this.handleWheelBound);
+    this.glRenderer.dispose();
     this.renderer.dispose();
   }
 
@@ -723,6 +754,11 @@ export class SceneManager {
       let mainObject: THREE.Object3D;
       const mesh = new THREE.Mesh(geo, mat);
       
+      // Apply OpenGL shader enhancement for better visuals (only to Mesh objects)
+      if (block.type === 'pillar') {
+        this.glRenderer.applyShader(mesh, 'toon');
+      }
+      
       if (block.scale) {
         mesh.scale.set(...block.scale);
       } else if (block.type === 'rotating') {
@@ -990,7 +1026,7 @@ export class SceneManager {
     this.scene.traverse(child => {
       if (child instanceof THREE.Mesh) {
         // Subtle block floating
-        if (child.userData.baseY !== undefined && child !== this.player && child.name !== 'particles' && child.name !== 'sky') {
+        if (child.userData.baseY !== undefined && child.name !== 'player' && child.name !== 'particles' && child.name !== 'sky') {
           child.position.y = child.userData.baseY + Math.sin(time * 1.5 + child.position.x * 0.5) * 0.05;
         }
         

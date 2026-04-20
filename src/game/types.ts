@@ -34,3 +34,23 @@ export interface GameState {
   isMoving: boolean;
   cameraRotation: number; // 0, 1, 2, 3 (multiples of 90 deg)
 }
+
+// OpenGL-related types
+export interface GLShaderConfig {
+  shaderName: string;
+  uniforms?: Record<string, any>;
+}
+
+export interface GLLightConfig {
+  type: 'directional' | 'point' | 'spot';
+  position: THREE.Vector3;
+  color: THREE.Color | number;
+  intensity: number;
+  castShadow?: boolean;
+  shadowMapSize?: number;
+}
+
+export interface GLRenderingMode {
+  mode: 'standard' | 'phong' | 'toon' | 'normal-map' | 'parallax';
+  enabled: boolean;
+}
