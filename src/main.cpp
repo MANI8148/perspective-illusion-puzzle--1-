@@ -20,6 +20,8 @@
 
 const int W=1280, H=720;
 float camYaw=-135.f, camPitch=38.f, camRadius=16.f;
+// Smooth camera lerp targets
+float tgtYaw=-135.f, tgtPitch=38.f, tgtRadius=16.f;
 float lastX=W/2.f, lastY=H/2.f;
 bool firstMouse=true, dragging=false;
 
@@ -75,14 +77,38 @@ void drawOutline(int id, glm::vec3 pos, glm::vec3 sc, const glm::mat4& VP, float
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
+// Draw a thin vertical beacon pillar above a node
+void drawBeacon(int id, glm::vec3 base, glm::vec3 col, float now, const glm::mat4& VP, float height=1.8f) {
+    float pulse = 0.5f+0.5f*sinf(now*3.f);
+    for(int i=0;i<4;i++) {
+        float fy = (float)i/3.f;
+        float alpha_scale = 1.f-fy*0.6f;
+        glm::vec3 c = col * (0.8f + pulse*0.5f) * alpha_scale;
+        glm::vec3 p = base + glm::vec3(0, 0.55f + fy*height, 0);
+        drawCube(id, p, glm::vec3(0.06f, height/4.f*0.7f, 0.06f), c, VP, true, 5);
+    }
+    float hs = 0.18f + 0.06f*pulse;
+    drawCube(id, base + glm::vec3(0, 0.55f+height+0.1f, 0), glm::vec3(hs, 0.04f, hs), col*(1.f+pulse), VP, true, 5);
+}
+
 void drawManFigure(int id, glm::vec3 pos, float time, const glm::mat4& VP) {
+    // pos = node world pos = block top surface (block.pos.y + 0.5)
+    // Draw the figure so feet sit exactly on pos (y=0 relative)
     float bob = sinf(time * 2.5f) * 0.04f;
     float br  = 1.0f + sinf(time * 1.8f) * 0.02f;
-    glm::vec3 c = glm::vec3(0.98f, 0.42f, 0.42f);
-    drawCube(id, pos + glm::vec3(0, 0.25f+bob, 0), glm::vec3(0.28f, 0.45f, 0.15f)*br, c, VP, false, 3);
-    drawCube(id, pos + glm::vec3(0, 0.55f+bob, 0), glm::vec3(0.22f)*br, glm::vec3(1, 0.85f, 0.8f), VP, false, 3);
-    drawCube(id, pos + glm::vec3(-0.18f, 0.2f+bob, 0), glm::vec3(0.08f, 0.3f, 0.08f), c, VP, false, 3);
-    drawCube(id, pos + glm::vec3( 0.18f, 0.2f+bob, 0), glm::vec3(0.08f, 0.3f, 0.08f), c, VP, false, 3);
+    glm::vec3 body  = glm::vec3(0.92f, 0.35f, 0.35f); // red body
+    glm::vec3 head  = glm::vec3(1.00f, 0.87f, 0.78f); // skin head
+    glm::vec3 leg   = glm::vec3(0.25f, 0.35f, 0.75f); // blue legs
+    // Legs (feet at pos.y)
+    drawCube(id, pos + glm::vec3(-0.08f, 0.12f+bob, 0), glm::vec3(0.10f, 0.24f, 0.10f), leg, VP, false, 3);
+    drawCube(id, pos + glm::vec3( 0.08f, 0.12f+bob, 0), glm::vec3(0.10f, 0.24f, 0.10f), leg, VP, false, 3);
+    // Body (torso sits above legs)
+    drawCube(id, pos + glm::vec3(0, 0.40f+bob, 0), glm::vec3(0.26f, 0.30f, 0.14f)*br, body, VP, false, 3);
+    // Arms
+    drawCube(id, pos + glm::vec3(-0.22f, 0.38f+bob, 0), glm::vec3(0.08f, 0.22f, 0.08f), body, VP, false, 3);
+    drawCube(id, pos + glm::vec3( 0.22f, 0.38f+bob, 0), glm::vec3(0.08f, 0.22f, 0.08f), body, VP, false, 3);
+    // Head
+    drawCube(id, pos + glm::vec3(0, 0.65f+bob, 0), glm::vec3(0.20f)*br, head, VP, false, 3);
 }
 
 glm::vec3 getNodeWorldPos(const Platform& b, const Node& n, float time) {
@@ -111,9 +137,17 @@ std::vector<std::string> findPath(const std::string& sId, const std::string& tId
 }
 
 void loadLevel(int idx) {
-    currentLevel = idx; const Level& lv = levels[idx];
+    currentLevel = idx;
+    const Level& lv = levels[idx];
     camYaw = lv.initYaw; camPitch = lv.initPitch; camRadius = lv.initRadius;
-    for(auto& b : lv.blocks) for(auto& n : b.nodes) if(n.id == lv.startNodeId) { player.pos = b.pos + n.offset; player.currentNodeId = n.id; }
+    tgtYaw = camYaw; tgtPitch = camPitch; tgtRadius = camRadius;
+    for(auto& b : lv.blocks)
+        for(auto& n : b.nodes)
+            if(n.id == lv.startNodeId) {
+                // Node offset is {0, 0.5, 0} — this IS the block top surface
+                player.pos = b.pos + n.offset;
+                player.currentNodeId = n.id;
+            }
     player.movePath.clear(); player.moveT = 0.f; particles.clear();
 }
 
@@ -162,13 +196,14 @@ int main() {
         
         const Level& lv = levels[currentLevel];
         glm::vec3 pivot = lv.pivot;
+        bool illActive = false; // set to true inside PLAYING block
         glm::mat4 view = glm::lookAt(pivot + glm::vec3(camRadius*cosf(glm::radians(camYaw))*cosf(glm::radians(camPitch)), camRadius*sinf(glm::radians(camPitch)), camRadius*sinf(glm::radians(camYaw))*cosf(glm::radians(camPitch))), pivot, glm::vec3(0,1,0));
         glm::mat4 proj = glm::perspective(glm::radians(44.f), (float)W/H, 0.1f, 150.f);
         glm::mat4 VP = proj * view;
 
         // 1. Skybox
         glDepthMask(GL_FALSE); skySh.use();
-        uMat4(skyID, "view", view); uMat4(skyID, "projection", proj); uFloat(skyID, "time", now);
+        uMat4(skyID, "view", view); uMat4(skyID, "projection", proj); uFloat(skyID, "time", now); uInt(skyID, "levelIndex", currentLevel);
         drawCube(skyID, glm::vec3(0), glm::vec3(120.f), glm::vec3(1), proj*glm::mat4(glm::mat3(view)), false, 0);
         glDepthMask(GL_TRUE);
 
@@ -179,24 +214,85 @@ int main() {
                 glm::vec3 target; for(auto& b : lv.blocks) for(auto& n : b.nodes) if(n.id == player.movePath[0]) target = getNodeWorldPos(b, n, now);
                 player.moveT += dt / player.MOVE_DUR;
                 if(player.moveT >= 1.f) { player.pos = target; player.currentNodeId = player.movePath[0]; player.movePath.erase(player.movePath.begin()); player.moveT = 0.f; if(player.currentNodeId == lv.goalNodeId) { levelDone[currentLevel]=true; appState = AppState::COMPLETE; } }
-                else { float et = player.moveT*player.moveT*(3-2*player.moveT); player.pos = glm::mix(player.pos, target, et); player.pos.y += sinf(et*M_PI)*0.25f; }
+                else {
+                    float et = player.moveT*player.moveT*(3-2*player.moveT);
+                    player.pos = glm::mix(player.pos, target, et);
+                    player.pos.y += sinf(et*M_PI)*0.25f;
+                    // Trail sparkles
+                    if(fmodf(now, 0.05f) < dt*2.f)
+                        spawnPart(player.pos+glm::vec3((float)(rand()%100-50)*0.005f,0.3f,(float)(rand()%100-50)*0.005f),
+                                  glm::vec3(0,0.8f+((float)(rand()%100)/100.f)*1.2f,0),
+                                  glm::vec3(0.5f,1.f,0.8f), 0.4f, 0.05f, PartType::TRAIL);
+                }
             } else if(mouseClick) {
                 glm::vec2 mNDC((mx/W)*2-1, -((my/H)*2-1)); float bestD = 0.1f; std::string bId = "";
-                for(auto& b : lv.blocks) for(auto& n : b.nodes) { glm::vec4 sp = VP * glm::vec4(getNodeWorldPos(b, n, now), 1.f); float d = glm::distance(mNDC, glm::vec2(sp.x/sp.w, sp.y/sp.w)); if(d < bestD) { bestD = d; bId = n.id; } }
+                for(auto& b : lv.blocks) for(auto& n : b.nodes) { 
+                    glm::vec4 sp = VP * glm::vec4(getNodeWorldPos(b, n, now), 1.f); 
+                    if (sp.w > 0.0f) {
+                        float d = glm::distance(mNDC, glm::vec2(sp.x/sp.w, sp.y/sp.w)); 
+                        if(d < bestD) { bestD = d; bId = n.id; } 
+                    }
+                }
                 if(bId != "") player.movePath = findPath(player.currentNodeId, bId, lv, now, VP);
             }
-            // Ambient Dust
-
-            // Draw Platforms
-            std::set<std::string> ill; std::map<std::string, glm::vec3> id2P; for(auto& b : lv.blocks) for(auto& n : b.nodes) id2P[n.id] = getNodeWorldPos(b, n, now);
-            for(auto const& [id, pos] : id2P) if(id != player.currentNodeId && checkAlignment(id2P[player.currentNodeId], pos, VP, W, H)) ill.insert(id);
-
+        // Draw Platforms
+            illActive = false;
+            std::set<std::string> ill; 
+            std::map<std::string, glm::vec3> id2P; 
+            std::map<std::string, glm::vec2> id2Screen;
+            std::map<std::string, bool> id2Vis;
+            for(auto& b : lv.blocks) {
+                for(auto& n : b.nodes) {
+                    glm::vec3 p = getNodeWorldPos(b, n, now);
+                    id2P[n.id] = p;
+                    glm::vec4 sp = VP * glm::vec4(p, 1.f);
+                    if(sp.w > 0.0f) {
+                        sp /= sp.w;
+                        if(sp.z <= 1.0f && sp.z >= -1.0f) {
+                            id2Screen[n.id] = glm::vec2((sp.x * 0.5f + 0.5f) * W, (sp.y * 0.5f + 0.5f) * H);
+                            id2Vis[n.id] = true;
+                        } else id2Vis[n.id] = false;
+                    } else id2Vis[n.id] = false;
+                }
+            }
+            const float THRESH = 38.0f;
+            for(auto const& [idA, posA] : id2P) {
+                if(!id2Vis[idA]) continue;
+                for(auto const& [idB, posB] : id2P) {
+                    if(idA < idB && id2Vis[idB] && glm::distance(posA, posB) >= 1.6f) {
+                        glm::vec2 sA = id2Screen[idA];
+                        glm::vec2 sB = id2Screen[idB];
+                        if(std::abs(sA.x - sB.x) < THRESH && std::abs(sA.y - sB.y) < THRESH) {
+                            ill.insert(idA); ill.insert(idB);
+                        }
+                    }
+                }
+            }
+            illActive = !ill.empty();
             for(auto& b : lv.blocks) {
                 float rY = 0.f; bool isG = false; int mt = 0;
+                bool isStart = false;
                 if(b.type == BlockType::ROTATING) { float c=4.f; float p=fmodf(now,c)/c; rY=floorf(now/c)*(M_PI/2); if(p>0.75f) rY+=(pow((p-0.75f)*4,2)*(3-2*(p-0.75f)*4))*(M_PI/2); }
-                for(auto& n : b.nodes) { if(ill.count(n.id)) isG = true; if(n.id == lv.goalNodeId) mt=1; }
-                if(isG && mt==0) mt=4; 
-                drawCube(gID, b.pos, b.scale, b.color, VP, isG, mt, rY); drawOutline(gID, b.pos, b.scale, VP, 0.03f, rY);
+                for(auto& n : b.nodes) {
+                    if(ill.count(n.id)) isG = true;
+                    if(n.id == lv.goalNodeId)  mt = 1;
+                    if(n.id == lv.startNodeId) isStart = true;
+                }
+                if(isG && mt==0) mt = 4;
+                // Start platform: override with bright blue tint
+                glm::vec3 drawCol = b.color;
+                if(isStart && mt == 0) {
+                    drawCol = glm::vec3(0.35f, 0.65f, 1.0f); // vivid sky-blue
+                    mt = 0;
+                }
+                drawCube(gID, b.pos, b.scale, drawCol, VP, isG, mt, rY);
+                drawOutline(gID, b.pos, b.scale, VP, 0.03f, rY);
+                // Start beacon (blue)
+                for(auto& n : b.nodes) if(n.id == lv.startNodeId)
+                    drawBeacon(gID, getNodeWorldPos(b,n,now), glm::vec3(0.4f,0.7f,1.f), now, VP);
+                // Goal beacon (green)
+                for(auto& n : b.nodes) if(n.id == lv.goalNodeId)
+                    drawBeacon(gID, getNodeWorldPos(b,n,now), glm::vec3(0.2f,1.f,0.45f), now, VP, 2.2f);
             }
             drawManFigure(gID, player.pos, now, VP);
             // Render Particles
@@ -208,7 +304,11 @@ int main() {
         }
         ui.time = now; ScreenContext ctx{ui, currentLevel, appState, (std::vector<Level>&)levels, mx, my, mouseClick, now, levelDone};
         ui.beginFrame();
-        if(appState == AppState::HOME) drawHome(ctx); else if(appState == AppState::LEVEL_SELECT) drawLevelSelect(ctx); else if(appState == AppState::PLAYING) drawHUD(ctx, false, !player.movePath.empty()); else if(appState == AppState::COMPLETE) drawComplete(ctx); else if(appState == AppState::INFO) drawInfo(ctx);
+        if(appState == AppState::HOME) drawHome(ctx);
+        else if(appState == AppState::LEVEL_SELECT) drawLevelSelect(ctx);
+        else if(appState == AppState::PLAYING) drawHUD(ctx, illActive, !player.movePath.empty());
+        else if(appState == AppState::COMPLETE) drawComplete(ctx);
+        else if(appState == AppState::INFO) drawInfo(ctx);
         ui.endFrame();
         if(appState == AppState::PLAYING && glfwGetKey(win, 82) == 1) loadLevel(currentLevel);
         if(appState == AppState::PLAYING && glfwGetKey(win, 256) == 1) appState = AppState::HOME;

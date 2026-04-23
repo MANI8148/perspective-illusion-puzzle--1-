@@ -6,14 +6,18 @@ bool checkAlignment(glm::vec3 a, glm::vec3 b,
 {
     // Project A into clip space
     glm::vec4 ca = viewProj * glm::vec4(a, 1.0f);
-    ca /= ca.w;
-
+    
     // Project B into clip space
     glm::vec4 cb = viewProj * glm::vec4(b, 1.0f);
+
+    if (ca.w <= 0.0f || cb.w <= 0.0f) return false;
+
+    ca /= ca.w;
+    if (cb.w <= 0.0f) return false;
     cb /= cb.w;
 
-    // Both must be in front of the camera (w > 0 after divide means z in NDC < 1)
-    if (ca.z > 1.0f || cb.z > 1.0f) return false;
+    // Both must be in front of the camera
+    if (ca.z > 1.0f || cb.z > 1.0f || ca.z < -1.0f || cb.z < -1.0f) return false;
 
     // Convert to pixel coordinates
     float ax = (ca.x * 0.5f + 0.5f) * width;

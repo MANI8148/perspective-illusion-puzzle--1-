@@ -3,343 +3,345 @@
 #include <cmath>
 #include <string>
 
-// ── palette ──────────────────────────────────────────────────────────────────
-static const glm::vec4 BG     (0.04f,0.06f,0.14f,1.f);
-static const glm::vec4 PANEL  (0.10f,0.14f,0.28f,0.92f);
-static const glm::vec4 ACCENT (0.30f,0.65f,1.00f,1.f);
-static const glm::vec4 GOLD   (1.00f,0.80f,0.20f,1.f);
-static const glm::vec4 GREEN  (0.20f,0.90f,0.50f,1.f);
-static const glm::vec4 WHITE  (1.f,1.f,1.f,1.f);
-static const glm::vec4 DIM    (0.7f,0.7f,0.8f,0.8f);
-static const glm::vec4 RED    (1.f,0.3f,0.3f,1.f);
+// ── Colour Palette ────────────────────────────────────────────────────────────
+static const glm::vec4 WHITE  (1.f, 1.f, 1.f, 1.f);
+static const glm::vec4 GOLD   (1.f, 0.80f, 0.20f, 1.f);
+static const glm::vec4 GOLD2  (1.f, 0.55f, 0.10f, 1.f);
+static const glm::vec4 GREEN  (0.18f, 0.92f, 0.50f, 1.f);
 
-// level accent colours (one per level, wraps)
+// Per-level accent colours
 static glm::vec4 lvlCol(int idx){
     static const glm::vec4 C[]={
-        {0.40f,0.75f,1.0f,1},{1.0f,0.5f,0.8f,1},{0.4f,1.0f,0.65f,1},
-        {1.0f,0.82f,0.3f,1},{0.55f,0.6f,1.0f,1},{1.0f,0.62f,0.95f,1},
-        {0.33f,0.94f,0.77f,1},{0.98f,0.47f,0.66f,1},{0.0f,0.81f,0.79f,1},
-        {0.91f,0.12f,0.39f,1},{0.55f,0.77f,0.29f,1},{1.0f,0.34f,0.13f,1},
+        {0.38f,0.72f,1.0f,1}, {1.0f,0.45f,0.78f,1}, {0.32f,0.97f,0.62f,1},
+        {1.0f,0.82f,0.22f,1}, {0.52f,0.55f,1.0f,1}, {1.0f,0.60f,0.92f,1},
+        {0.22f,0.90f,0.75f,1},{0.98f,0.42f,0.60f,1},{0.0f,0.78f,0.90f,1},
+        {0.95f,0.15f,0.42f,1},{0.50f,0.85f,0.22f,1},{1.0f,0.38f,0.12f,1},
     };
     return C[idx%12];
 }
 
-static const char* lvlIcons[]={
-    "→","⋯","◎","⏏","⌂","⚙","◈","↑","∞","◇","❀","⛩"
-};
+// Level metadata
 static const char* lvlTips[]={
-    "Move arrows to travel platforms",
-    "Orbit camera until platforms align",
-    "Follow the spiral staircase up",
-    "Align the far ledge via illusion",
-    "Multi-floor palace — find the bridge",
-    "Clockwork arms — rotate to connect",
+    "Click adjacent platforms to walk",
+    "Rotate camera until platforms overlap",
+    "Follow the spiral staircase upwards",
+    "A leap of faith — align from afar",
+    "Multi-floor palace — climb and bridge",
+    "Sync with the clockwork rotation",
     "Two illusion jumps required",
-    "Climb stairs, cross rotating bridge",
-    "Three chained illusions to solve",
-    "Crystal maze — mind the height gap",
+    "Ascend stairs, cross the rotating bridge",
+    "Chain three illusions to escape",
+    "Crystal maze — mind the altitude gap",
     "Float across two garden terraces",
-    "Ancient temple — hidden altar awaits",
+    "Ancient temple — find the hidden altar",
 };
-static const char* controls[]={"LMB drag — Orbit camera","Scroll — Zoom in / out",
-    "Arrow keys — Move player","R — Restart level","N — Next level (on complete)",
-    "Escape — Quit"};
+static const char* controls[]={
+    "Left-drag  —  Orbit camera",
+    "Scroll     —  Zoom in / out",
+    "Click      —  Move player",
+    "R          —  Restart level",
+    "Esc        —  Back to menu",
+};
 
-// ── button helper ─────────────────────────────────────────────────────────────
-static bool button(ScreenContext& ctx,float x,float y,float w,float h,
-                   const std::string& label,glm::vec4 col,float sz=22.f){
-    bool hov=UIRenderer::hit((float)ctx.mouseX,(float)ctx.mouseY,x,y,w,h);
-    glm::vec4 c=col; if(hov) c=glm::vec4(glm::vec3(col)*1.25f,col.a);
-    ctx.ui.rect(x,y,w,h,c,0.06f,hov?3:2,
-                glm::vec4(glm::vec3(col)*1.5f+glm::vec3(0.1f),1.f));
-    ctx.ui.text(label,x+w/2,y+h/2,sz,WHITE,hov?0.8f:0.f,true,true);
+// ── Button helper ─────────────────────────────────────────────────────────────
+static bool button(ScreenContext& ctx, float x, float y, float w, float h,
+                   const std::string& label, glm::vec4 col, float sz=20.f){
+    bool hov = UIRenderer::hit((float)ctx.mouseX,(float)ctx.mouseY,x,y,w,h);
+    glm::vec4 c = hov ? glm::vec4(glm::vec3(col)*1.15f, glm::min(col.a+0.15f,1.f)) : col;
+    ctx.ui.rect(x, y, w, h, c, 0.07f, hov?3:2, glm::vec4(1.f,1.f,1.f,0.9f));
+    ctx.ui.text(label, x+w*0.5f, y+h*0.5f, sz, WHITE, hov?0.6f:0.f, true, true);
     return hov && ctx.mouseClick;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── HOME ══════════════════════════════════════════════════════════════════════
 void drawHome(ScreenContext& ctx){
-    float W=ctx.ui.W, H=ctx.ui.H;
-    float t=ctx.time;
+    float W=ctx.ui.W, H=ctx.ui.H, t=ctx.time;
 
-    // Full-screen gradient bg
-    ctx.ui.rect(0,0,W,H,glm::vec4(0.04f,0.05f,0.13f,1.f),0.f,1,
-                glm::vec4(0.06f,0.10f,0.22f,1.f));
+    // Rich deep gradient background
+    ctx.ui.rect(0,0,W,H, glm::vec4(0.04f,0.05f,0.16f,1.f), 0.f,1,
+                glm::vec4(0.12f,0.06f,0.28f,1.f));
 
-    // Animated starfield dots (simple)
-    for(int i=0;i<40;i++){
-        float px=fmodf(i*137.5f,W), py=fmodf(i*97.3f+t*8.f*(0.3f+(i%5)*0.1f),H);
-        float sz=1.5f+sinf(t*2.f+i)*0.8f;
-        ctx.ui.rect(px,py,sz,sz,glm::vec4(0.6f,0.8f,1.f,0.4f+0.3f*sinf(t+i)),0.f,0);
+    // Floating bokeh orbs
+    for(int i=0;i<18;i++){
+        float bx = fmodf(i*173.f + t*10.f*(0.3f+(i%4)*0.15f), W+60.f)-30.f;
+        float by = fmodf(i*113.f + t*6.f*(0.4f+(i%5)*0.12f), H+80.f)-40.f;
+        float br = 18.f + sinf(t*1.2f+i)*10.f;
+        glm::vec4 bc = lvlCol(i%12);
+        ctx.ui.rect(bx-br, by-br, br*2.f, br*2.f,
+                    glm::vec4(bc.r,bc.g,bc.b,0.07f+0.03f*sinf(t+i)), 0.5f, 0);
     }
 
-    // Central glass panel
-    float pw=600,ph=420,px=(W-pw)/2,py=(H-ph)/2-20;
-    ctx.ui.rect(px,py,pw,ph,glm::vec4(0.12f,0.18f,0.35f,0.88f),0.06f,2,
-                glm::vec4(0.3f,0.55f,1.f,1.f));
+    // Central frosted glass card
+    float pw=660.f, ph=460.f, px=(W-pw)*0.5f, py=(H-ph)*0.5f-24.f;
+    ctx.ui.rect(px,py,pw,ph, glm::vec4(1.f,1.f,1.f,0.09f),0.07f,2,
+                glm::vec4(1.f,1.f,1.f,0.35f));
+
+    // Glowing top accent bar
+    float pulse = 0.5f+0.5f*sinf(t*1.6f);
+    ctx.ui.rect(px+40,py+8,pw-80,3.f, glm::vec4(pulse,0.7f,1.f,0.7f+0.2f*pulse),0.f,0);
 
     // Title
-    float pulse=0.5f+0.5f*sinf(t*1.8f);
-    glm::vec4 tc=glm::vec4(0.5f+0.5f*pulse,0.75f,1.f,1.f);
-    ctx.ui.text("PERSPECTIVE",W/2,py+65,52.f,tc,0.9f,true,true);
-    ctx.ui.text("ILLUSION  PUZZLE",W/2,py+118,34.f,glm::vec4(0.8f,0.9f,1.f,0.95f),0.6f,true,true);
+    ctx.ui.text("PERSPECTIVE", W*0.5f, py+88.f, 58.f,
+                glm::vec4(1.f,1.f,1.f,1.f), 0.5f+0.35f*pulse, true, true);
+    ctx.ui.text("ILLUSION  PUZZLE", W*0.5f, py+142.f, 30.f,
+                glm::vec4(0.78f,0.88f,1.f,0.95f), 0.2f, true, true);
 
-    // Subtitle
-    ctx.ui.text("A sci-fi perspective puzzle in OpenGL",W/2,py+165,16.f,
-                glm::vec4(0.6f,0.7f,0.9f,0.7f),0.f,true,true);
+    // Sub-tagline
+    ctx.ui.text("Navigate impossible geometry through perspective",
+                W*0.5f, py+185.f, 15.f, glm::vec4(1.f,1.f,1.f,0.55f), 0.f, true, true);
 
-    // Divider
-    ctx.ui.rect(px+40,py+190,pw-80,2,glm::vec4(0.3f,0.55f,1.f,0.4f),0.f,0);
+    // Thin divider
+    ctx.ui.rect(px+80, py+212, pw-160, 1.5f, glm::vec4(1.f,1.f,1.f,0.18f), 0.f, 0);
 
-    // Buttons
-    float bw=220,bh=50,gap=20;
-    float bx=(W-2*bw-gap)/2, by=py+215;
-
-    if(button(ctx,bx,by,bw,bh,"▶  PLAY  (Level 1)",
-              glm::vec4(0.15f,0.5f,0.9f,1.f),20.f)){
-        ctx.currentLevel=0; ctx.state=AppState::PLAYING;
-    }
-    if(button(ctx,bx+bw+gap,by,bw,bh,"≡  SELECT LEVEL",
-              glm::vec4(0.25f,0.35f,0.6f,1.f),20.f)){
+    // Play + Level Select buttons
+    float bw=210.f, bh=52.f, gap=24.f;
+    float bx=(W-2*bw-gap)*0.5f, by=py+240.f;
+    if(button(ctx,bx,by,bw,bh,"  PLAY",     glm::vec4(0.22f,0.55f,1.f,0.85f),19.f))
+        { ctx.currentLevel=0; ctx.state=AppState::PLAYING; }
+    if(button(ctx,bx+bw+gap,by,bw,bh,"  LEVELS", glm::vec4(0.55f,0.28f,0.85f,0.75f),19.f))
         ctx.state=AppState::LEVEL_SELECT;
-    }
 
-    // Controls summary
-    ctx.ui.text("CONTROLS",W/2,py+296,15.f,glm::vec4(0.5f,0.7f,1.f,0.9f),0.f,true,true);
-    float cy=py+318;
+    // Controls list
+    float cy=py+325.f;
+    ctx.ui.text("CONTROLS", W*0.5f, cy, 13.f, glm::vec4(1.f,1.f,1.f,0.45f), 0.f,true,true);
+    cy+=22.f;
     for(auto& c:controls){
-        ctx.ui.text(c,W/2,cy,13.f,glm::vec4(0.65f,0.75f,0.9f,0.7f),0.f,true,true);
-        cy+=18;
+        ctx.ui.text(c, W*0.5f, cy, 13.f, glm::vec4(0.85f,0.92f,1.f,0.75f), 0.f,true,true);
+        cy+=19.f;
     }
 
     // Footer
-    ctx.ui.text("12 LEVELS  •  OpenGL 3.3 + GLSL",W/2,H-22,12.f,
-                glm::vec4(0.4f,0.5f,0.7f,0.5f),0.f,true,true);
+    ctx.ui.text("12 LEVELS  •  OpenGL 3.3  •  GLSL Shaders",
+                W*0.5f, H-20.f, 12.f, glm::vec4(1.f,1.f,1.f,0.28f), 0.f,true,true);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── LEVEL SELECT ══════════════════════════════════════════════════════════════
 void drawLevelSelect(ScreenContext& ctx){
-    float W=ctx.ui.W, H=ctx.ui.H;
-    float t=ctx.time;
+    float W=ctx.ui.W, H=ctx.ui.H, t=ctx.time;
 
-    // BG
-    ctx.ui.rect(0,0,W,H,glm::vec4(0.04f,0.05f,0.13f,1.f),0.f,1,
-                glm::vec4(0.06f,0.10f,0.22f,1.f));
+    // Background
+    ctx.ui.rect(0,0,W,H, glm::vec4(0.04f,0.05f,0.16f,1.f),0.f,1,
+                glm::vec4(0.10f,0.05f,0.24f,1.f));
 
-    // Header panel
-    ctx.ui.rect(0,0,W,72,glm::vec4(0.08f,0.12f,0.26f,0.97f),0.f,2,
-                glm::vec4(0.25f,0.5f,1.f,1.f));
-    ctx.ui.text("SELECT  LEVEL",W/2,36,26.f,
-                glm::vec4(0.7f,0.88f,1.f,1.f),0.5f,true,true);
+    // Header bar
+    ctx.ui.rect(0,0,W,68.f, glm::vec4(1.f,1.f,1.f,0.08f),0.f,2,
+                glm::vec4(1.f,1.f,1.f,0.30f));
+    ctx.ui.text("SELECT LEVEL", W*0.5f, 34.f, 24.f, WHITE, 0.3f, true, true);
 
-    // Back button
-    if(button(ctx,18,16,90,40,"← Back",glm::vec4(0.18f,0.25f,0.5f,1.f),14.f))
+    if(button(ctx,16,14,88,40,"< Back", glm::vec4(1.f,1.f,1.f,0.15f),13.f))
         ctx.state=AppState::HOME;
 
-    // Grid: 4 cols × 3 rows
+    // Grid  4 col x 3 row
     int N=(int)ctx.levels.size();
-    int COLS=4;
-    float CW=260,CH=160,GAP=18;
-    float totalW=COLS*CW+(COLS-1)*GAP;
-    float gx=(W-totalW)/2, gy=95;
+    float CW=272.f, CH=162.f, GAP=16.f;
+    float totalW=4*CW+3*GAP, gx=(W-totalW)*0.5f, gy=86.f;
 
     for(int i=0;i<N;i++){
-        int col=i%COLS, row=i/COLS;
+        int col=i%4, row=i/4;
         float cx=gx+col*(CW+GAP), cy=gy+row*(CH+GAP);
-
+        glm::vec4 ac=lvlCol(i);
         bool done=ctx.levelDone[i];
         bool hov=UIRenderer::hit((float)ctx.mouseX,(float)ctx.mouseY,cx,cy,CW,CH);
-        glm::vec4 ac=lvlCol(i);
-        glm::vec4 bg=glm::vec4(glm::vec3(ac)*0.18f+glm::vec3(0.05f,0.07f,0.15f),0.93f);
-        if(hov) bg=glm::vec4(glm::vec3(ac)*0.28f+glm::vec3(0.06f,0.09f,0.18f),0.97f);
 
-        // Card BG
-        ctx.ui.rect(cx,cy,CW,CH,bg,0.05f,2,ac);
+        // Card background
+        float cardAlpha = hov ? 0.22f : 0.12f;
+        ctx.ui.rect(cx,cy,CW,CH, glm::vec4(ac.r,ac.g,ac.b,cardAlpha),0.06f,2,ac);
 
-        // Done badge
+        // Top accent strip
+        ctx.ui.rect(cx+4,cy+4,CW-8,3.f, glm::vec4(ac.r,ac.g,ac.b,0.8f),0.f,0);
+
+        // Level number badge
+        ctx.ui.rect(cx+10,cy+14,46,46, glm::vec4(ac.r,ac.g,ac.b,0.3f),0.08f,4,ac);
+        ctx.ui.text(std::to_string(i+1), cx+33, cy+37, 20.f, WHITE,0.5f,true,true);
+
+        // Done checkmark
         if(done){
-            ctx.ui.rect(cx+CW-36,cy+6,30,20,
-                        glm::vec4(0.1f,0.7f,0.3f,0.9f),0.04f,0);
-            ctx.ui.text("✓",cx+CW-21,cy+16,11.f,WHITE,0.f,true,true);
+            ctx.ui.rect(cx+CW-34,cy+8,26,18, glm::vec4(0.15f,0.85f,0.40f,0.85f),0.04f,0);
+            ctx.ui.text("✓", cx+CW-21, cy+17, 11.f, WHITE,0.f,true,true);
         }
-
-        // Icon bg circle
-        ctx.ui.rect(cx+10,cy+10,52,52,
-                    glm::vec4(glm::vec3(ac)*0.3f,0.9f),0.12f,4,ac);
-        ctx.ui.text(std::to_string(i+1),cx+36,cy+36,18.f,WHITE,0.6f,true,true);
 
         // Level name
-        ctx.ui.text(ctx.levels[i].name,cx+8,cy+70,13.5f,
-                    glm::vec4(0.9f,0.95f,1.f,1.f),0.f);
+        ctx.ui.text(ctx.levels[i].name, cx+10, cy+72, 13.5f,
+                    glm::vec4(1.f,1.f,1.f,0.95f), 0.f);
         // Tip
         std::string tip=lvlTips[i];
-        if(tip.size()>32) tip=tip.substr(0,29)+"...";
-        ctx.ui.text(tip,cx+8,cy+92,10.5f,glm::vec4(0.6f,0.7f,0.85f,0.8f),0.f);
-
-        // Info button
-        float ib_x=cx+8, ib_y=cy+CH-32, ib_w=60, ib_h=24;
-        bool iHov=UIRenderer::hit((float)ctx.mouseX,(float)ctx.mouseY,ib_x,ib_y,ib_w,ib_h);
-        ctx.ui.rect(ib_x,ib_y,ib_w,ib_h,
-                    glm::vec4(0.15f,0.25f,0.5f,iHov?0.95f:0.75f),0.04f,0);
-        ctx.ui.text("i  Info",ib_x+ib_w/2,ib_y+12,11.f,ACCENT,0.f,true,true);
+        if(tip.size()>34) tip=tip.substr(0,31)+"...";
+        ctx.ui.text(tip, cx+10, cy+92, 10.5f, glm::vec4(0.8f,0.88f,1.f,0.70f),0.f);
 
         // Play button
-        float pb_x=cx+CW-78, pb_y=cy+CH-32, pb_w=70, pb_h=24;
+        float pb_x=cx+CW-76, pb_y=cy+CH-30, pb_w=68, pb_h=22;
         bool pHov=UIRenderer::hit((float)ctx.mouseX,(float)ctx.mouseY,pb_x,pb_y,pb_w,pb_h);
         ctx.ui.rect(pb_x,pb_y,pb_w,pb_h,
-                    glm::vec4(glm::vec3(ac)*(pHov?0.9f:0.7f),1.f),0.04f,pHov?3:0,ac);
-        ctx.ui.text("▶ Play",pb_x+pb_w/2,pb_y+12,11.f,WHITE,0.f,true,true);
+            glm::vec4(ac.r,ac.g,ac.b, pHov?0.85f:0.55f),0.04f,pHov?3:0,ac);
+        ctx.ui.text("PLAY",pb_x+pb_w*0.5f,pb_y+11,11.f,WHITE,0.f,true,true);
 
-        if(ctx.mouseClick){
-            if(iHov){ ctx.currentLevel=i; ctx.state=AppState::INFO; }
-            if(pHov){ ctx.currentLevel=i; ctx.state=AppState::PLAYING; }
-        }
+        if(ctx.mouseClick && pHov){ ctx.currentLevel=i; ctx.state=AppState::PLAYING; }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── HUD ═══════════════════════════════════════════════════════════════════════
 void drawHUD(ScreenContext& ctx, bool illActive, bool isMoving){
-    float W=ctx.ui.W;
-    int  lv=ctx.currentLevel;
+    float W=ctx.ui.W, H=ctx.ui.H;
+    int lv=ctx.currentLevel;
     glm::vec4 ac=lvlCol(lv);
 
-    // Top bar
-    ctx.ui.rect(0,0,W,44,glm::vec4(0.05f,0.08f,0.18f,0.88f),0.f,2,
-                glm::vec4(glm::vec3(ac)*0.6f,1.f));
+    // Top bar — frosted
+    ctx.ui.rect(0,0,W,48.f, glm::vec4(0.04f,0.05f,0.14f,0.80f),0.f,2,
+                glm::vec4(ac.r,ac.g,ac.b,0.6f));
 
-    ctx.ui.text("L"+std::to_string(lv+1)+"/12",12,22,16.f,ac,0.4f,false,true);
-    ctx.ui.text(ctx.levels[lv].name,80,22,15.f,
-                glm::vec4(0.85f,0.9f,1.f,0.95f),0.f,false,true);
+    // Level badge
+    ctx.ui.rect(10,7,64,34, glm::vec4(ac.r,ac.g,ac.b,0.25f),0.05f,0);
+    ctx.ui.text("L"+std::to_string(lv+1), 42, 24, 17.f, WHITE, 0.4f, true, true);
 
-    // Right side buttons
-    float W2=W;
-    if(button(ctx,W2-130,6,60,32,"≡ Lvls",glm::vec4(0.2f,0.28f,0.55f,0.9f),11.f))
+    // Level name
+    ctx.ui.text(ctx.levels[lv].name, 88, 24, 16.f,
+                glm::vec4(0.9f,0.95f,1.f,0.95f), 0.f, false, true);
+
+    // Right buttons
+    if(button(ctx,W-128,8,58,32,"Lvls", glm::vec4(1.f,1.f,1.f,0.12f),12.f))
         ctx.state=AppState::LEVEL_SELECT;
-    if(button(ctx,W2-65,6,58,32,"i Info",glm::vec4(0.2f,0.28f,0.55f,0.9f),11.f))
+    if(button(ctx,W-64,8,56,32,"Info", glm::vec4(1.f,1.f,1.f,0.12f),12.f))
         ctx.state=AppState::INFO;
 
-    // Illusion alert banner
+    // Controls cheat-sheet — bottom-left glass card
+    float cw=230.f, ch=114.f, cx2=12.f, cy2=H-ch-12.f;
+    ctx.ui.rect(cx2,cy2,cw,ch, glm::vec4(0.04f,0.05f,0.14f,0.72f),0.05f,2,
+                glm::vec4(1.f,1.f,1.f,0.22f));
+    ctx.ui.text("CONTROLS", cx2+12, cy2+14, 12.f,
+                glm::vec4(ac.r,ac.g,ac.b,0.9f), 0.f);
+    float lcy=cy2+32.f;
+    for(auto& c:controls){
+        ctx.ui.text(c, cx2+14, lcy, 11.f, glm::vec4(1.f,1.f,1.f,0.78f),0.f);
+        lcy+=16.f;
+    }
+
+    // Illusion banner — top-centre animated
     if(illActive){
-        float bw=420,bh=38,bx=(W-bw)/2;
-        float pulse=0.5f+0.5f*sinf(ctx.time*4.f);
-        ctx.ui.rect(bx,52,bw,bh,
-                    glm::vec4(1.f,0.78f,0.08f,0.15f+0.1f*pulse),0.05f,3,
-                    glm::vec4(1.f,0.78f,0.08f,1.f));
-        ctx.ui.text("✨  ILLUSION ALIGNED — Press arrow to cross!",
-                    W/2,71,13.f,GOLD,0.7f,true,true);
+        float bw=460.f, bh=40.f, bx=(W-bw)*0.5f;
+        float p=0.5f+0.5f*sinf(ctx.time*5.f);
+        ctx.ui.rect(bx,54.f,bw,bh,
+            glm::vec4(1.f,0.85f,0.15f,0.20f+0.12f*p),0.05f,3,
+            glm::vec4(1.f,0.85f,0.15f,1.f));
+        ctx.ui.text("ILLUSION ALIGNED  —  Click the platform to cross!",
+                    W*0.5f,74.f,13.f, WHITE, 0.7f, true,true);
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── LEVEL COMPLETE ════════════════════════════════════════════════════════════
 void drawComplete(ScreenContext& ctx){
-    float W=ctx.ui.W, H=ctx.ui.H;
-    float t=ctx.time;
+    float W=ctx.ui.W, H=ctx.ui.H, t=ctx.time;
 
-    // Dark overlay
-    ctx.ui.rect(0,0,W,H,glm::vec4(0.f,0.f,0.f,0.6f),0.f,0);
+    // Dark vignette overlay
+    ctx.ui.rect(0,0,W,H, glm::vec4(0.f,0.f,0.f,0.52f),0.f,0);
 
-    float pw=480,ph=320,px=(W-pw)/2,py=(H-ph)/2;
-    ctx.ui.rect(px,py,pw,ph,glm::vec4(0.08f,0.14f,0.28f,0.97f),0.07f,2,
-                glm::vec4(0.3f,0.85f,0.4f,1.f));
+    // Panel
+    float pw=520.f, ph=360.f, px=(W-pw)*0.5f, py=(H-ph)*0.5f;
+    ctx.ui.rect(px,py,pw,ph, glm::vec4(0.06f,0.08f,0.20f,0.97f),0.08f,2,
+                glm::vec4(0.3f,0.9f,0.45f,1.f));
 
-    float pulse=0.5f+0.5f*sinf(t*2.f);
-    ctx.ui.text("LEVEL COMPLETE!",W/2,py+65,28.f,
-                glm::vec4(0.2f,1.f,0.5f,1.f),0.9f,true,true);
-    ctx.ui.text(ctx.levels[ctx.currentLevel].name,W/2,py+105,17.f,
-                glm::vec4(0.8f,0.9f,1.f,0.9f),0.3f,true,true);
+    // Green top strip
+    ctx.ui.rect(px,py,pw,6.f, glm::vec4(0.2f,0.95f,0.5f,0.8f),0.f,0);
 
-    // Stars
+    // Headline
+    float gp = 0.5f+0.5f*sinf(t*2.2f);
+    ctx.ui.text("LEVEL COMPLETE!", W*0.5f, py+68.f, 34.f,
+                glm::vec4(0.22f,1.f,0.52f,1.f), 0.6f+0.3f*gp, true,true);
+    ctx.ui.text(ctx.levels[ctx.currentLevel].name, W*0.5f, py+110.f, 19.f,
+                glm::vec4(0.85f,0.95f,1.f,0.9f), 0.2f, true,true);
+
+    // SDF Stars (mode 6)
     for(int i=0;i<3;i++){
-        float sx=W/2+(i-1)*60.f, sy=py+148;
-        float delay=i*0.4f;
-        float sc=0.6f+0.4f*sinf(t*2.5f+delay);
-        ctx.ui.rect(sx-14*sc,sy-14*sc,28*sc,28*sc,
-                    GOLD,0.06f,0,glm::vec4(1.f,0.6f,0.1f,1.f));
+        float sx = W*0.5f+(i-1)*78.f;
+        float sy = py+178.f;
+        float sc = 1.f+0.18f*sinf(t*2.8f+i*0.5f);
+        float sz = 50.f*sc;
+        ctx.ui.rect(sx-sz*0.5f, sy-sz*0.5f, sz,sz,
+                    GOLD, 0.f, 6, GOLD2);
     }
 
-    float bw=180,bh=44,gap=16,by=py+195;
-    float bx=(W-2*bw-gap)/2;
+    // Buttons
+    float bw=190.f, bh=46.f, gap=18.f, by=py+246.f;
+    float bx=(W-2*bw-gap)*0.5f;
+
+    if(button(ctx,bx,by,bw,bh,"  Retry", glm::vec4(0.28f,0.38f,0.72f,0.85f),16.f))
+        ctx.state=AppState::PLAYING;
 
     bool hasNext=(ctx.currentLevel+1<(int)ctx.levels.size());
-    if(button(ctx,bx,by,bw,bh,"↺  Retry",glm::vec4(0.25f,0.35f,0.65f,1.f),16.f))
-        ctx.state=AppState::PLAYING; // caller resets level
-
     if(hasNext){
-        if(button(ctx,bx+bw+gap,by,bw,bh,"▶  Next Level",
-                  glm::vec4(0.15f,0.55f,0.25f,1.f),16.f)){
+        if(button(ctx,bx+bw+gap,by,bw,bh,"  Next Level",
+                  glm::vec4(0.15f,0.62f,0.28f,0.90f),16.f)){
             ctx.currentLevel++; ctx.state=AppState::PLAYING;
         }
     } else {
-        if(button(ctx,bx+bw+gap,by,bw,bh,"🏠  Home",
-                  glm::vec4(0.35f,0.2f,0.6f,1.f),16.f))
+        if(button(ctx,bx+bw+gap,by,bw,bh,"  Home",
+                  glm::vec4(0.55f,0.22f,0.72f,0.85f),16.f))
             ctx.state=AppState::HOME;
     }
 
-    if(button(ctx,(W-bw)/2,by+bh+18,bw,38,"≡  Level Select",
-              glm::vec4(0.18f,0.25f,0.5f,0.9f),14.f))
+    if(button(ctx,(W-bw)*0.5f, by+bh+16, bw, 38.f, "Level Select",
+              glm::vec4(1.f,1.f,1.f,0.12f),14.f))
         ctx.state=AppState::LEVEL_SELECT;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── INFO ══════════════════════════════════════════════════════════════════════
 void drawInfo(ScreenContext& ctx){
     float W=ctx.ui.W, H=ctx.ui.H;
     int lv=ctx.currentLevel;
     glm::vec4 ac=lvlCol(lv);
 
     // Overlay
-    ctx.ui.rect(0,0,W,H,glm::vec4(0.f,0.f,0.f,0.65f),0.f,0);
+    ctx.ui.rect(0,0,W,H, glm::vec4(0.f,0.f,0.f,0.55f),0.f,0);
 
-    float pw=520,ph=400,px=(W-pw)/2,py=(H-ph)/2;
-    ctx.ui.rect(px,py,pw,ph,glm::vec4(0.07f,0.11f,0.24f,0.97f),0.07f,2,ac);
+    float pw=560.f, ph=430.f, px=(W-pw)*0.5f, py=(H-ph)*0.5f;
+    ctx.ui.rect(px,py,pw,ph, glm::vec4(0.05f,0.07f,0.20f,0.97f),0.07f,2,ac);
 
     // Header
-    ctx.ui.rect(px,py,pw,56,glm::vec4(glm::vec3(ac)*0.35f,0.95f),0.07f,0);
-    ctx.ui.text("Level "+std::to_string(lv+1)+" — "+ctx.levels[lv].name,
-                px+pw/2,py+28,18.f,WHITE,0.5f,true,true);
+    ctx.ui.rect(px,py,pw,58.f, glm::vec4(ac.r,ac.g,ac.b,0.22f),0.07f,0);
+    ctx.ui.text("Level "+std::to_string(lv+1)+"  —  "+ctx.levels[lv].name,
+                px+pw*0.5f, py+29.f, 19.f, WHITE, 0.5f, true,true);
 
-    // Icon
-    ctx.ui.rect(px+20,py+72,64,64,glm::vec4(glm::vec3(ac)*0.3f,0.9f),0.1f,4,ac);
-    ctx.ui.text(std::to_string(lv+1),px+52,py+104,24.f,WHITE,0.7f,true,true);
+    // Level number icon
+    ctx.ui.rect(px+22,py+76,66,66, glm::vec4(ac.r,ac.g,ac.b,0.25f),0.10f,4,ac);
+    ctx.ui.text(std::to_string(lv+1), px+55, py+109, 26.f, WHITE,0.7f,true,true);
 
-    // Hint / tip
-    ctx.ui.text("OBJECTIVE",px+100,py+85,12.f,ac,0.4f);
-    ctx.ui.text(ctx.levels[lv].hint,px+100,py+110,13.f,
-                glm::vec4(0.85f,0.92f,1.f,0.9f),0.f);
-    ctx.ui.text(lvlTips[lv],px+100,py+122,11.5f,
-                glm::vec4(0.6f,0.72f,0.88f,0.75f),0.f);
+    // Objective
+    ctx.ui.text("OBJECTIVE", px+106, py+88, 13.f, ac, 0.4f);
+    ctx.ui.text(ctx.levels[lv].hint, px+106, py+112, 14.f,
+                glm::vec4(0.9f,0.95f,1.f,0.95f), 0.f);
+    ctx.ui.text(lvlTips[lv], px+106, py+132, 12.f,
+                glm::vec4(0.75f,0.85f,1.f,0.75f), 0.f);
 
     // Divider
-    ctx.ui.rect(px+20,py+155,pw-40,1.5f,glm::vec4(glm::vec3(ac)*0.5f,0.5f),0.f,0);
+    ctx.ui.rect(px+20,py+162,pw-40,1.5f, glm::vec4(1.f,1.f,1.f,0.18f),0.f,0);
 
     // Controls
-    ctx.ui.text("HOW TO PLAY",px+pw/2,py+175,13.f,ac,0.3f,true,true);
-    float cy=py+196;
+    ctx.ui.text("HOW TO PLAY", px+pw*0.5f, py+184, 13.f, ac, 0.3f,true,true);
+    float cy=py+206;
     for(auto& c:controls){
-        ctx.ui.rect(px+30,cy-2,6,6,ac,0.03f,0);
-        ctx.ui.text(c,px+44,cy+3,12.f,glm::vec4(0.75f,0.85f,1.f,0.85f),0.f);
-        cy+=20;
+        ctx.ui.rect(px+32,cy-3,8,8, ac, 0.03f,0);
+        ctx.ui.text(c, px+50, cy+3, 12.5f, glm::vec4(1.f,1.f,1.f,0.88f),0.f);
+        cy+=22.f;
     }
 
     // Platform legend
-    ctx.ui.rect(px+20,cy+8,pw-40,1.f,glm::vec4(glm::vec3(ac)*0.4f,0.4f),0.f,0);
-    cy+=16;
-    ctx.ui.text("PLATFORM TYPES",px+pw/2,cy+8,12.f,ac,0.2f,true,true);
-    cy+=26;
-    const char* ptypes[]={"Start  (blue)","Goal  (green)","Illusion-aligned (gold)","Pillar (decor)"};
-    glm::vec4 pcols[]={{0.3f,0.85f,0.95f,1},{0.1f,0.92f,0.48f,1},{1.f,0.78f,0.08f,1},{0.88f,0.9f,0.92f,1}};
+    ctx.ui.rect(px+20,cy+10,pw-40,1.5f, glm::vec4(1.f,1.f,1.f,0.15f),0.f,0);
+    cy+=22.f;
+    ctx.ui.text("PLATFORM TYPES", px+pw*0.5f, cy+10, 13.f, ac, 0.25f,true,true);
+    cy+=28.f;
+    const char* pn[]={"Start (blue node)","Goal (green runes)","Aligned (gold glow)","Pillar (decorative)"};
+    glm::vec4 pc[]={{0.4f,0.8f,1.f,1.f},{0.2f,0.95f,0.45f,1.f},{1.f,0.82f,0.18f,1.f},{0.78f,0.82f,0.90f,1.f}};
     for(int i=0;i<4;i++){
-        ctx.ui.rect(px+30,cy,12,12,pcols[i],0.02f,0);
-        ctx.ui.text(ptypes[i],px+50,cy+8,11.f,glm::vec4(0.7f,0.8f,0.95f,0.8f),0.f,false,true);
-        cy+=18;
+        ctx.ui.rect(px+32,cy,14,14,pc[i],0.03f,0);
+        ctx.ui.text(pn[i], px+54, cy+10, 12.f, glm::vec4(0.88f,0.92f,1.f,0.85f),0.f,false,true);
+        cy+=20.f;
     }
 
     // Buttons
-    float bw=160,bh=40,gap=14;
-    float bx=(W-2*bw-gap)/2, by=py+ph-56;
-    if(button(ctx,bx,by,bw,bh,"▶ Play Now",ac,15.f)){
+    float bw=180.f, bh=44.f, bgap=18.f;
+    float bx=(W-2*bw-bgap)*0.5f, bby=py+ph-58.f;
+    if(button(ctx,bx,bby,bw,bh,"  Play Now", ac,15.f))
         ctx.state=AppState::PLAYING;
-    }
-    if(button(ctx,bx+bw+gap,by,bw,bh,"← Back",
-              glm::vec4(0.2f,0.28f,0.55f,1.f),15.f)){
+    if(button(ctx,bx+bw+bgap,bby,bw,bh,"< Back",
+              glm::vec4(1.f,1.f,1.f,0.15f),15.f))
         ctx.state=AppState::LEVEL_SELECT;
-    }
 }
