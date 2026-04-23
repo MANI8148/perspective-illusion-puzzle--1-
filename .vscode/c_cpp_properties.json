@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/include/glad",
+        "/usr/include",
+        "/usr/include/GLFW",
+        "/usr/include/glm"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/include",
+          "/usr/include"
+        ]
+      },
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}
