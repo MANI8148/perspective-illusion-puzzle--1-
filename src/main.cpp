@@ -1,4 +1,4 @@
-// Perspective Illusion Puzzle — main.cpp (fixed visuals)
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -8,449 +8,211 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <queue>
+#include <map>
+#include <set>
 #include <algorithm>
 #include "shader.h"
 #include "illusion.h"
+#include "levels.h"
+#include "ui_renderer.h"
+#include "screens.h"
 
-const int W = 1280, H = 720;
+const int W=1280, H=720;
+float camYaw=-135.f, camPitch=38.f, camRadius=16.f;
+float lastX=W/2.f, lastY=H/2.f;
+bool firstMouse=true, dragging=false;
 
-// ── Camera ────────────────────────────────────────────────────────────────────
-float camYaw = -135.f, camPitch = 38.f, camRadius = 16.f;
-float lastX = W/2.f, lastY = H/2.f;
-bool firstMouse = true;
-const glm::vec3 PIVOT(2.5f, 2.0f, -4.5f);
+AppState appState = AppState::HOME;
+static int gID=0, skyID=0;
+float dt=0, lastFrame=0;
 
-// ── Globals ───────────────────────────────────────────────────────────────────
-static int  gID = 0;
-float dt = 0, lastFrame = 0;
+std::vector<Level> levels = buildLevels();
+int currentLevel = 0;
+bool levelDone[12] = {};
 
-inline void uMat4(const char* n, const glm::mat4& m){ glUniformMatrix4fv(glGetUniformLocation(gID,n),1,GL_FALSE,glm::value_ptr(m)); }
-inline void uVec3(const char* n, const glm::vec3& v){ glUniform3fv(glGetUniformLocation(gID,n),1,glm::value_ptr(v)); }
-inline void uBool(const char* n, bool b)            { glUniform1i(glGetUniformLocation(gID,n), b?1:0); }
-inline void uFloat(const char* n, float f)          { glUniform1f(glGetUniformLocation(gID,n), f); }
+struct Player {
+    glm::vec3 pos;
+    std::string currentNodeId;
+    std::vector<std::string> movePath;
+    float moveT = 0.f;
+    const float MOVE_DUR = 0.18f;
+} player;
 
-// ── Colours ───────────────────────────────────────────────────────────────────
-const glm::vec3 C_PLAT (0.20f, 0.42f, 0.92f);
-const glm::vec3 C_GOAL (0.10f, 0.92f, 0.48f);
-const glm::vec3 C_ILL  (1.00f, 0.78f, 0.08f);
-const glm::vec3 C_PLAY (0.98f, 0.25f, 0.22f);
-const glm::vec3 C_DARK (0.06f, 0.08f, 0.18f);
-const glm::vec3 C_SHAD (0.03f, 0.04f, 0.10f);
-const glm::vec3 C_STRT (0.30f, 0.85f, 0.95f);
-const glm::vec3 C_GRID (0.12f, 0.16f, 0.30f);
+enum class PartType { AMBIENT, SPARK, TRAIL, FOUNTAIN };
+struct Particle { glm::vec3 pos, vel, col; float life, sz; PartType type; };
+std::vector<Particle> particles;
 
-// ── Platform / Level ──────────────────────────────────────────────────────────
-struct Platform { glm::vec3 pos; bool isGoal; bool isStart; };
-struct Level {
-    std::vector<Platform> plats;
-    glm::vec3 pivot;
-    float initYaw, initPitch, initRadius;
-    std::string hint;
-};
-
-std::vector<Level> levels = {
-  {
-    {
-      {{0,0, 0},false,true },
-      {{1,0, 0},false,false},
-      {{2,0, 0},false,false},
-      {{3,0, 0},false,false},
-      {{3,0,-1},false,false},
-      {{3,4,-7},false,false},
-      {{4,4,-7},false,false},
-      {{5,4,-7},false,false},
-      {{5,4,-8},false,false},
-      {{5,4,-9},true, false},
-    },
-    {2.5f,2.0f,-4.5f}, -135.f, 38.f, 16.f,
-    "Orbit until two platforms GLOW GOLD — then press UP to cross the illusion!"
-  },
-  {
-    {
-      {{ 0,0, 0},false,true },
-      {{ 1,0, 0},false,false},
-      {{ 2,0, 0},false,false},
-      {{ 2,0,-1},false,false},
-      {{ 2,4,-6},false,false},
-      {{ 3,4,-6},false,false},
-      {{ 4,4,-6},false,false},
-      {{ 4,0,-1},false,false},
-      {{ 5,0,-1},false,false},
-      {{ 6,0,-1},false,false},
-      {{ 6,0, 0},false,false},
-      {{ 7,0, 0},true, false},
-    },
-    {3.5f,2.0f,-3.0f}, -120.f, 35.f, 18.f,
-    "Two illusions to cross — first UP to the ledge, then DOWN to reach the goal!"
-  },
-  {
-    {
-      {{ 0,0, 0},false,true },
-      {{ 1,0, 0},false,false},
-      {{ 2,0, 0},false,false},
-      {{ 2,0,-1},false,false},
-      {{ 2,6,-8},false,false},
-      {{ 3,6,-8},false,false},
-      {{ 4,6,-8},false,false},
-      {{ 4,6,-9},false,false},
-      {{ 4,6,-10},false,false},
-      {{ 5,6,-10},false,false},
-      {{ 5,6,-11},false,false},
-      {{ 5,0,-4},false,false},
-      {{ 6,0,-4},false,false},
-      {{ 7,0,-4},false,false},
-      {{ 7,0,-3},false,false},
-      {{ 7,0,-2},true, false},
-    },
-    {3.5f,3.0f,-5.5f}, -125.f, 36.f, 20.f,
-    "Scale the tower via illusion, then descend through a second illusion to reach the goal!"
-  }
-};
-
-int  currentLevel = 0;
-bool levelComplete = false;
-float completeTimer = 0.f;
-
-// ── Player ────────────────────────────────────────────────────────────────────
-glm::vec3 playerPos, prevPos, targetPos;
-float moveT = 1.f;
-bool  isMoving = false, keyHeld = false;
-const float MOVE_DUR = 0.18f;
-
-float easeSin(float t){ return t*t*(3.f-2.f*t); }
-
-void loadLevel(int idx){
-    currentLevel  = idx;
-    levelComplete = false;
-    completeTimer = 0.f;
-    const Level& lv = levels[idx];
-    camYaw    = lv.initYaw;
-    camPitch  = lv.initPitch;
-    camRadius = lv.initRadius;
-    playerPos = lv.plats[0].pos + glm::vec3(0,0.75f,0);
-    prevPos = targetPos = playerPos;
-    moveT = 1.f; isMoving = false; keyHeld = false;
-    std::cout << "\n=== LEVEL " << idx+1 << " ===\n" << lv.hint << "\n\n";
+void spawnPart(glm::vec3 p, glm::vec3 v, glm::vec3 c, float l, float s, PartType t) {
+    particles.push_back({p, v, c, l, s, t});
 }
 
-// ── Platform lookup — checks X, Y, Z ─────────────────────────────────────────
-int platAt(glm::vec3 p){
-    const auto& pv = levels[currentLevel].plats;
-    for(int i=0;i<(int)pv.size();++i){
-        if(std::abs(p.x-pv[i].pos.x)<0.55f &&
-           std::abs(p.z-pv[i].pos.z)<0.55f &&
-           std::abs((p.y-0.75f)-pv[i].pos.y)<1.2f) return i;
-    }
-    return -1;
+inline void uMat4(int id, const char*n,const glm::mat4&m){glUniformMatrix4fv(glGetUniformLocation(id,n),1,GL_FALSE,glm::value_ptr(m));}
+inline void uVec3(int id, const char*n,const glm::vec3&v){glUniform3fv(glGetUniformLocation(id,n),1,glm::value_ptr(v));}
+inline void uBool(int id, const char*n,bool b){glUniform1i(glGetUniformLocation(id,n),b?1:0);}
+inline void uFloat(int id, const char*n,float f){glUniform1f(glGetUniformLocation(id,n),f);}
+inline void uInt(int id, const char*n,int i){glUniform1i(glGetUniformLocation(id,n),i);}
+
+unsigned VAO;
+
+void drawCube(int id, glm::vec3 pos, glm::vec3 sc, glm::vec3 col, const glm::mat4& VP, bool glow=false, int matT=0, float rotY=0.f) {
+    glm::mat4 M = glm::translate(glm::mat4(1), pos);
+    if(rotY != 0.f) M = glm::rotate(M, rotY, glm::vec3(0,1,0));
+    M = glm::scale(M, sc);
+    uMat4(id, "MVP", VP*M); uMat4(id, "model", M);
+    uVec3(id, "objectColor", col); uBool(id, "isGlow", glow); uBool(id, "isWireframe", false); uInt(id, "matType", matT);
+    glBindVertexArray(VAO); glDrawArrays(GL_TRIANGLES, 0, 36);
 }
 
-// ── Callbacks ─────────────────────────────────────────────────────────────────
-void mouseCB(GLFWwindow* w, double x, double y){
-    if(glfwGetMouseButton(w,GLFW_MOUSE_BUTTON_LEFT)!=GLFW_PRESS){firstMouse=true;return;}
-    if(firstMouse){lastX=(float)x;lastY=(float)y;firstMouse=false;}
-    camYaw   += (float)(x-lastX)*0.28f;
-    camPitch += (float)(lastY-y)*0.28f;
-    camPitch  = glm::clamp(camPitch,5.f,85.f);
-    lastX=(float)x; lastY=(float)y;
-}
-void scrollCB(GLFWwindow*,double,double dy){
-    camRadius -= (float)dy*0.8f;
-    camRadius  = glm::clamp(camRadius,4.f,32.f);
+void drawOutline(int id, glm::vec3 pos, glm::vec3 sc, const glm::mat4& VP, float th=0.03f, float rotY=0.f) {
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); glLineWidth(1.8f);
+    glm::mat4 M = glm::translate(glm::mat4(1), pos);
+    if(rotY != 0.f) M = glm::rotate(M, rotY, glm::vec3(0,1,0));
+    M = glm::scale(M, sc + glm::vec3(th));
+    uMat4(id, "MVP", VP*M); uMat4(id, "model", M);
+    uVec3(id, "objectColor", glm::vec3(0.05f)); uBool(id, "isGlow", false); uBool(id, "isWireframe", true); uInt(id, "matType", 0);
+    glBindVertexArray(VAO); glDrawArrays(GL_TRIANGLES, 0, 36);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-// ── Draw helpers ──────────────────────────────────────────────────────────────
-unsigned VAO, VAO_GRID;
-int gridLineCount = 0;
-
-void drawSolid(glm::vec3 pos, glm::vec3 sc, glm::vec3 col, glm::mat4 VP, bool glow=false){
-    glm::mat4 M = glm::scale(glm::translate(glm::mat4(1),pos),sc);
-    uMat4("MVP",VP*M); uMat4("model",M);
-    uVec3("objectColor",col); uBool("isGlow",glow); uBool("isWireframe",false);
-    glBindVertexArray(VAO); glDrawArrays(GL_TRIANGLES,0,36);
+void drawManFigure(int id, glm::vec3 pos, float time, const glm::mat4& VP) {
+    float bob = sinf(time * 2.5f) * 0.04f;
+    float br  = 1.0f + sinf(time * 1.8f) * 0.02f;
+    glm::vec3 c = glm::vec3(0.98f, 0.42f, 0.42f);
+    drawCube(id, pos + glm::vec3(0, 0.25f+bob, 0), glm::vec3(0.28f, 0.45f, 0.15f)*br, c, VP, false, 3);
+    drawCube(id, pos + glm::vec3(0, 0.55f+bob, 0), glm::vec3(0.22f)*br, glm::vec3(1, 0.85f, 0.8f), VP, false, 3);
+    drawCube(id, pos + glm::vec3(-0.18f, 0.2f+bob, 0), glm::vec3(0.08f, 0.3f, 0.08f), c, VP, false, 3);
+    drawCube(id, pos + glm::vec3( 0.18f, 0.2f+bob, 0), glm::vec3(0.08f, 0.3f, 0.08f), c, VP, false, 3);
 }
 
-void drawOutline(glm::vec3 pos, glm::vec3 sc, glm::mat4 VP, float th=0.028f){
-    glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);
-    glLineWidth(1.8f);
-    glm::vec3 s=sc+glm::vec3(th);
-    glm::mat4 M=glm::scale(glm::translate(glm::mat4(1),pos),s);
-    uMat4("MVP",VP*M); uMat4("model",M);
-    uVec3("objectColor",C_DARK); uBool("isGlow",false); uBool("isWireframe",true);
-    glBindVertexArray(VAO); glDrawArrays(GL_TRIANGLES,0,36);
-    glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
+glm::vec3 getNodeWorldPos(const Platform& b, const Node& n, float time) {
+    if(b.type != BlockType::ROTATING) return b.pos + n.offset;
+    float cycle = 4.f; float phase = fmodf(time, cycle) / cycle;
+    float angle = floorf(time / cycle) * (M_PI / 2.f);
+    if(phase > 0.75f) { float t = (phase - 0.75f) * 4.f; angle += (t * t * (3.f - 2.f * t)) * (M_PI / 2.f); }
+    glm::vec4 off = glm::rotate(glm::mat4(1), angle, glm::vec3(0,1,0)) * glm::vec4(n.offset, 1.f);
+    return b.pos + glm::vec3(off);
 }
 
-// ── Input ─────────────────────────────────────────────────────────────────────
-void processInput(GLFWwindow* win, glm::mat4 VP){
-    if(glfwGetKey(win,GLFW_KEY_ESCAPE)==GLFW_PRESS)
-        glfwSetWindowShouldClose(win,true);
-    if(glfwGetKey(win,GLFW_KEY_R)==GLFW_PRESS){
-        loadLevel(currentLevel); return;
+std::vector<std::string> findPath(const std::string& sId, const std::string& tId, const Level& lv, float t, const glm::mat4& VP) {
+    if(sId == tId) return {};
+    std::queue<std::pair<std::string, std::vector<std::string>>> q; q.push({sId, {}});
+    std::set<std::string> seen;
+    std::map<std::string, glm::vec3> id2P; std::map<std::string, std::vector<std::string>> adj;
+    for(auto& b : lv.blocks) for(auto& n : b.nodes) { id2P[n.id] = getNodeWorldPos(b, n, t); for(auto& c : n.connections) adj[n.id].push_back(c); }
+    while(!q.empty()){
+        auto cur = q.front(); q.pop();
+        if(cur.first == tId) return cur.second;
+        if(seen.count(cur.first)) continue; seen.insert(cur.first);
+        for(auto& nxt : adj[cur.first]) if(id2P.count(nxt) && glm::distance(id2P[cur.first], id2P[nxt]) < 1.6f) { auto p = cur.second; p.push_back(nxt); q.push({nxt, p}); }
+        for(auto const& [id, pos] : id2P) if(id != cur.first && checkAlignment(id2P[cur.first], pos, VP, W, H)) { auto p = cur.second; p.push_back(id); q.push({id, p}); }
     }
-    if(levelComplete){
-        if(glfwGetKey(win,GLFW_KEY_N)==GLFW_PRESS){
-            if(currentLevel+1<(int)levels.size()) loadLevel(currentLevel+1);
-        }
-        return;
-    }
-    if(isMoving) return;
-
-    const int    KEYS[4]={GLFW_KEY_RIGHT,GLFW_KEY_LEFT,GLFW_KEY_UP,GLFW_KEY_DOWN};
-    const glm::vec2 DIRS[4]={{1,0},{-1,0},{0,-1},{0,1}};
-
-    bool any=false;
-    for(int k:KEYS) any|=(glfwGetKey(win,k)==GLFW_PRESS);
-    if(!any){keyHeld=false;return;}
-    if(keyHeld) return;
-
-    int which=-1;
-    for(int k=0;k<4;++k) if(glfwGetKey(win,KEYS[k])==GLFW_PRESS){which=k;break;}
-    if(which<0){keyHeld=true;return;}
-
-    glm::vec2 dir=DIRS[which];
-    int ci=platAt(playerPos);
-    if(ci<0){keyHeld=true;return;}
-    glm::vec3 cp=levels[currentLevel].plats[ci].pos;
-    const auto& pv=levels[currentLevel].plats;
-
-    // Real neighbour (1-unit XZ, any Y)
-    int best=-1; float bestD=0.35f;
-    for(int i=0;i<(int)pv.size();++i){
-        if(i==ci) continue;
-        glm::vec2 d2(pv[i].pos.x-cp.x, pv[i].pos.z-cp.z);
-        float len=glm::length(d2);
-        if(len<0.01f||len>1.55f) continue;
-        float dot=glm::dot(d2/len,dir);
-        if(dot>bestD){bestD=dot;best=i;}
-    }
-    if(best>=0){
-        prevPos=playerPos;
-        targetPos=pv[best].pos+glm::vec3(0,0.75f,0);
-        moveT=0;isMoving=true;keyHeld=true;return;
-    }
-
-    // Illusion neighbour
-    int bIll=-1; float bID=0.35f;
-    for(int i=0;i<(int)pv.size();++i){
-        if(i==ci) continue;
-        if(!checkAlignment(cp,pv[i].pos,VP,W,H)) continue;
-        glm::vec2 d2(pv[i].pos.x-cp.x, pv[i].pos.z-cp.z);
-        float len=glm::length(d2);
-        if(len<0.01f) continue;
-        float dot=glm::dot(d2/len,dir);
-        if(dot>bID){bID=dot;bIll=i;}
-    }
-    if(bIll>=0){
-        prevPos=playerPos;
-        targetPos=pv[bIll].pos+glm::vec3(0,0.75f,0);
-        moveT=0;isMoving=true;keyHeld=true;
-        std::cout<<"✨ Illusion crossed to platform "<<bIll<<"!\n";
-        return;
-    }
-    keyHeld=true;
+    return {};
 }
 
-// ── MAIN ─────────────────────────────────────────────────────────────────────
-int main(){
-    if(!glfwInit()){std::cerr<<"glfwInit failed\n";return -1;}
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_SAMPLES,8);
+void loadLevel(int idx) {
+    currentLevel = idx; const Level& lv = levels[idx];
+    camYaw = lv.initYaw; camPitch = lv.initPitch; camRadius = lv.initRadius;
+    for(auto& b : lv.blocks) for(auto& n : b.nodes) if(n.id == lv.startNodeId) { player.pos = b.pos + n.offset; player.currentNodeId = n.id; }
+    player.movePath.clear(); player.moveT = 0.f; particles.clear();
+}
 
-    GLFWwindow* win=glfwCreateWindow(W,H,"Perspective Illusion Puzzle",NULL,NULL);
-    if(!win){std::cerr<<"Window failed\n";glfwTerminate();return -1;}
-    glfwMakeContextCurrent(win);
-    glfwSetCursorPosCallback(win,mouseCB);
-    glfwSetScrollCallback(win,scrollCB);
-    glfwSwapInterval(1);
-
-    if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)){std::cerr<<"GLAD failed\n";return -1;}
-
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_MULTISAMPLE);
-    // NOTE: GL_CULL_FACE intentionally disabled — we need ALL faces visible
-    //       from every camera angle so blocks never disappear when orbiting.
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_POLYGON_OFFSET_FILL);
-    glClearColor(0.04f,0.06f,0.14f,1);
-
-    Shader sh("shaders/vertex.glsl","shaders/fragment.glsl");
-    if(!sh.ID){std::cerr<<"Shader failed\n";return -1;}
-    gID=sh.ID;
-
-    // Cube: pos(3)+normal(3)
+int main() {
+    if(!glfwInit()) return -1;
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE); glfwWindowHint(GLFW_SAMPLES,8);
+    GLFWwindow* win = glfwCreateWindow(W, H, "Perspective Illusion Puzzle", NULL, NULL);
+    if(!win) return -1;
+    glfwMakeContextCurrent(win); glfwSwapInterval(1);
+    glfwSetCursorPosCallback(win, [](GLFWwindow*, double x, double y){
+        if(appState != AppState::PLAYING) { firstMouse=true; return; }
+        if(glfwGetMouseButton(glfwGetCurrentContext(), 0) != 1) { firstMouse=true; dragging=false; return; }
+        if(firstMouse) { lastX=(float)x; lastY=(float)y; firstMouse=false; dragging=true; }
+        if(dragging) { camYaw += (float)(x - lastX) * 0.25f; camPitch += (float)(lastY - y) * 0.25f; camPitch = glm::clamp(camPitch, 5.f, 85.f); }
+        lastX=(float)x; lastY=(float)y;
+    });
+    glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy){ if(appState==AppState::PLAYING) { camRadius -= (float)dy; camRadius=glm::clamp(camRadius, 5.f, 40.f); } });
+    static bool mouseClick = false;
+    glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int){ if(b==0 && a==1) mouseClick=true; });
+    if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
+    glEnable(GL_DEPTH_TEST); glEnable(GL_MULTISAMPLE); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    Shader sh("shaders/vertex.glsl", "shaders/fragment.glsl"); gID = sh.ID;
+    Shader skySh("shaders/sky_vert.glsl", "shaders/sky_frag.glsl"); skyID = skySh.ID;
+    UIRenderer ui; ui.init(W, H);
+    
     float verts[]={
-        -0.5f,-0.5f,-0.5f, 0,0,-1,  0.5f,-0.5f,-0.5f, 0,0,-1,  0.5f, 0.5f,-0.5f, 0,0,-1,
-         0.5f, 0.5f,-0.5f, 0,0,-1, -0.5f, 0.5f,-0.5f, 0,0,-1, -0.5f,-0.5f,-0.5f, 0,0,-1,
-        -0.5f,-0.5f, 0.5f, 0,0, 1,  0.5f,-0.5f, 0.5f, 0,0, 1,  0.5f, 0.5f, 0.5f, 0,0, 1,
-         0.5f, 0.5f, 0.5f, 0,0, 1, -0.5f, 0.5f, 0.5f, 0,0, 1, -0.5f,-0.5f, 0.5f, 0,0, 1,
-        -0.5f, 0.5f, 0.5f,-1,0, 0, -0.5f, 0.5f,-0.5f,-1,0, 0, -0.5f,-0.5f,-0.5f,-1,0, 0,
-        -0.5f,-0.5f,-0.5f,-1,0, 0, -0.5f,-0.5f, 0.5f,-1,0, 0, -0.5f, 0.5f, 0.5f,-1,0, 0,
-         0.5f, 0.5f, 0.5f, 1,0, 0,  0.5f, 0.5f,-0.5f, 1,0, 0,  0.5f,-0.5f,-0.5f, 1,0, 0,
-         0.5f,-0.5f,-0.5f, 1,0, 0,  0.5f,-0.5f, 0.5f, 1,0, 0,  0.5f, 0.5f, 0.5f, 1,0, 0,
-        -0.5f,-0.5f,-0.5f, 0,-1,0,  0.5f,-0.5f,-0.5f, 0,-1,0,  0.5f,-0.5f, 0.5f, 0,-1,0,
-         0.5f,-0.5f, 0.5f, 0,-1,0, -0.5f,-0.5f, 0.5f, 0,-1,0, -0.5f,-0.5f,-0.5f, 0,-1,0,
-        -0.5f, 0.5f,-0.5f, 0, 1,0,  0.5f, 0.5f,-0.5f, 0, 1,0,  0.5f, 0.5f, 0.5f, 0, 1,0,
-         0.5f, 0.5f, 0.5f, 0, 1,0, -0.5f, 0.5f, 0.5f, 0, 1,0, -0.5f, 0.5f,-0.5f, 0, 1,0,
+        -.5f,-.5f,-.5f,0,0,-1, .5f,-.5f,-.5f,0,0,-1, .5f,.5f,-.5f,0,0,-1, .5f,.5f,-.5f,0,0,-1, -.5f,.5f,-.5f,0,0,-1, -.5f,-.5f,-.5f,0,0,-1,
+        -.5f,-.5f,.5f,0,0,1, .5f,-.5f,.5f,0,0,1, .5f,.5f,.5f,0,0,1, .5f,.5f,.5f,0,0,1, -.5f,.5f,.5f,0,0,1, -.5f,-.5f,.5f,0,0,1,
+        -.5f,.5f,.5f,-1,0,0, -.5f,.5f,-.5f,-1,0,0, -.5f,-.5f,-.5f,-1,0,0, -.5f,-.5f,-.5f,-1,0,0, -.5f,-.5f,.5f,-1,0,0, -.5f,.5f,.5f,-1,0,0,
+        .5f,.5f,.5f,1,0,0, .5f,.5f,-.5f,1,0,0, .5f,-.5f,-.5f,1,0,0, .5f,-.5f,-.5f,1,0,0, .5f,-.5f,.5f,1,0,0, .5f,.5f,.5f,1,0,0,
+        -.5f,-.5f,-.5f,0,-1,0, .5f,-.5f,-.5f,0,-1,0, .5f,-.5f,.5f,0,-1,0, .5f,-.5f,.5f,0,-1,0, -.5f,-.5f,.5f,0,-1,0, -.5f,-.5f,-.5f,0,-1,0,
+        -.5f,.5f,-.5f,0,1,0, .5f,.5f,-.5f,0,1,0, .5f,.5f,.5f,0,1,0, .5f,.5f,.5f,0,1,0, -.5f,.5f,.5f,0,1,0, -.5f,.5f,-.5f,0,1,0,
     };
-    unsigned VBO;
-    glGenVertexArrays(1,&VAO); glGenBuffers(1,&VBO);
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER,VBO);
-    glBufferData(GL_ARRAY_BUFFER,sizeof(verts),verts,GL_STATIC_DRAW);
-    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)(3*sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // ── Ground grid ──────────────────────────────────────────────────────────
-    std::vector<float> gridVerts;
-    float gMin=-4.f, gMax=14.f, gY=-0.45f;
-    for(float x=gMin;x<=gMax;x+=1.f){
-        gridVerts.insert(gridVerts.end(),{x,gY,gMin, 0,1,0});
-        gridVerts.insert(gridVerts.end(),{x,gY,gMax, 0,1,0});
-    }
-    for(float z=gMin;z<=gMax;z+=1.f){
-        gridVerts.insert(gridVerts.end(),{gMin,gY,z, 0,1,0});
-        gridVerts.insert(gridVerts.end(),{gMax,gY,z, 0,1,0});
-    }
-    gridLineCount=(int)(gridVerts.size()/6);
-    unsigned VAO_G, VBO_G;
-    glGenVertexArrays(1,&VAO_G); glGenBuffers(1,&VBO_G);
-    glBindVertexArray(VAO_G);
-    glBindBuffer(GL_ARRAY_BUFFER,VBO_G);
-    glBufferData(GL_ARRAY_BUFFER,gridVerts.size()*sizeof(float),gridVerts.data(),GL_STATIC_DRAW);
-    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)(3*sizeof(float)));
-    glEnableVertexAttribArray(1);
-    VAO_GRID=VAO_G;
+    unsigned VBO; glGenVertexArrays(1,&VAO); glGenBuffers(1,&VBO);
+    glBindVertexArray(VAO); glBindBuffer(GL_ARRAY_BUFFER,VBO); glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glVertexAttribPointer(0,3,GL_FLOAT,0,6*sizeof(float),0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1,3,GL_FLOAT,0,6*sizeof(float),(void*)(3*sizeof(float))); glEnableVertexAttribArray(1);
 
     loadLevel(0);
-
-    const glm::vec3 PLAT_SC(1.0f, 0.70f, 1.0f);  // taller slabs — more visible
-    const glm::vec3 PLAY_SC(0.36f, 0.68f, 0.36f);
-
     while(!glfwWindowShouldClose(win)){
-        float now=(float)glfwGetTime();
-        dt=now-lastFrame; lastFrame=now;
+        float now = (float)glfwGetTime(); dt = now - lastFrame; lastFrame = now;
+        double mx, my; glfwGetCursorPos(win, &mx, &my);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        const Level& lv = levels[currentLevel];
+        glm::vec3 pivot = lv.pivot;
+        glm::mat4 view = glm::lookAt(pivot + glm::vec3(camRadius*cosf(glm::radians(camYaw))*cosf(glm::radians(camPitch)), camRadius*sinf(glm::radians(camPitch)), camRadius*sinf(glm::radians(camYaw))*cosf(glm::radians(camPitch))), pivot, glm::vec3(0,1,0));
+        glm::mat4 proj = glm::perspective(glm::radians(44.f), (float)W/H, 0.1f, 150.f);
+        glm::mat4 VP = proj * view;
 
-        // Camera
-        glm::vec3 pivot=levels[currentLevel].pivot;
-        glm::vec3 camOff(
-            camRadius*cosf(glm::radians(camYaw))*cosf(glm::radians(camPitch)),
-            camRadius*sinf(glm::radians(camPitch)),
-            camRadius*sinf(glm::radians(camYaw))*cosf(glm::radians(camPitch))
-        );
-        glm::vec3 camPos=pivot+camOff;
-        glm::mat4 view=glm::lookAt(camPos,pivot,glm::vec3(0,1,0));
-        glm::mat4 proj=glm::perspective(glm::radians(44.f),(float)W/H,0.1f,120.f);
-        glm::mat4 VP=proj*view;
+        // 1. Skybox
+        glDepthMask(GL_FALSE); skySh.use();
+        uMat4(skyID, "view", view); uMat4(skyID, "projection", proj); uFloat(skyID, "time", now);
+        drawCube(skyID, glm::vec3(0), glm::vec3(120.f), glm::vec3(1), proj*glm::mat4(glm::mat3(view)), false, 0);
+        glDepthMask(GL_TRUE);
 
-        processInput(win,VP);
+        if(appState == AppState::PLAYING) {
+            sh.use(); uFloat(gID, "time", now); uVec3(gID, "viewPos", pivot);
+            // Logic
+            if(!player.movePath.empty()) {
+                glm::vec3 target; for(auto& b : lv.blocks) for(auto& n : b.nodes) if(n.id == player.movePath[0]) target = getNodeWorldPos(b, n, now);
+                player.moveT += dt / player.MOVE_DUR;
+                if(player.moveT >= 1.f) { player.pos = target; player.currentNodeId = player.movePath[0]; player.movePath.erase(player.movePath.begin()); player.moveT = 0.f; if(player.currentNodeId == lv.goalNodeId) { levelDone[currentLevel]=true; appState = AppState::COMPLETE; } }
+                else { float et = player.moveT*player.moveT*(3-2*player.moveT); player.pos = glm::mix(player.pos, target, et); player.pos.y += sinf(et*M_PI)*0.25f; }
+            } else if(mouseClick) {
+                glm::vec2 mNDC((mx/W)*2-1, -((my/H)*2-1)); float bestD = 0.1f; std::string bId = "";
+                for(auto& b : lv.blocks) for(auto& n : b.nodes) { glm::vec4 sp = VP * glm::vec4(getNodeWorldPos(b, n, now), 1.f); float d = glm::distance(mNDC, glm::vec2(sp.x/sp.w, sp.y/sp.w)); if(d < bestD) { bestD = d; bId = n.id; } }
+                if(bId != "") player.movePath = findPath(player.currentNodeId, bId, lv, now, VP);
+            }
+            // Ambient Dust
 
-        // Smooth movement + hop arc
-        if(isMoving){
-            moveT+=dt/MOVE_DUR;
-            if(moveT>=1.f){
-                moveT=1.f; isMoving=false; playerPos=targetPos;
-                int gi=platAt(playerPos);
-                if(gi>=0 && levels[currentLevel].plats[gi].isGoal && !levelComplete){
-                    levelComplete=true;
-                    std::cout<<"🎉  LEVEL "<<currentLevel+1<<" COMPLETE!\n";
-                    if(currentLevel+1<(int)levels.size())
-                        std::cout<<"Press N for next level, R to retry.\n\n";
-                    else
-                        std::cout<<"All levels done! Press R to replay.\n\n";
-                }
-            } else {
-                float et=easeSin(moveT);
-                playerPos=glm::mix(prevPos,targetPos,et);
-                playerPos.y+=sinf(et*glm::pi<float>())*0.30f; // hop
+            // Draw Platforms
+            std::set<std::string> ill; std::map<std::string, glm::vec3> id2P; for(auto& b : lv.blocks) for(auto& n : b.nodes) id2P[n.id] = getNodeWorldPos(b, n, now);
+            for(auto const& [id, pos] : id2P) if(id != player.currentNodeId && checkAlignment(id2P[player.currentNodeId], pos, VP, W, H)) ill.insert(id);
+
+            for(auto& b : lv.blocks) {
+                float rY = 0.f; bool isG = false; int mt = 0;
+                if(b.type == BlockType::ROTATING) { float c=4.f; float p=fmodf(now,c)/c; rY=floorf(now/c)*(M_PI/2); if(p>0.75f) rY+=(pow((p-0.75f)*4,2)*(3-2*(p-0.75f)*4))*(M_PI/2); }
+                for(auto& n : b.nodes) { if(ill.count(n.id)) isG = true; if(n.id == lv.goalNodeId) mt=1; }
+                if(isG && mt==0) mt=4; 
+                drawCube(gID, b.pos, b.scale, b.color, VP, isG, mt, rY); drawOutline(gID, b.pos, b.scale, VP, 0.03f, rY);
+            }
+            drawManFigure(gID, player.pos, now, VP);
+            // Render Particles
+            for(int i=0; i<(int)particles.size(); i++) {
+                auto& p = particles[i]; p.pos += p.vel * dt; p.life -= dt;
+                if(p.life < 0) { particles.erase(particles.begin()+i); i--; continue; }
+                drawCube(gID, p.pos, glm::vec3(p.sz), p.col, VP, true, 5);
             }
         }
-
-        // Illusion glow detection
-        const auto& pv=levels[currentLevel].plats;
-        std::vector<bool> glow(pv.size(),false);
-        bool anyIll=false;
-        for(int i=0;i<(int)pv.size();++i)
-            for(int j=i+1;j<(int)pv.size();++j){
-                float xzD=glm::length(glm::vec2(pv[j].pos.x-pv[i].pos.x,pv[j].pos.z-pv[i].pos.z));
-                if(xzD<1.6f) continue;
-                if(checkAlignment(pv[i].pos,pv[j].pos,VP,W,H)){
-                    glow[i]=glow[j]=true; anyIll=true;
-                }
-            }
-
-        // ── Render ────────────────────────────────────────────────────────────
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-        sh.use();
-        uFloat("time",now);
-        uVec3("viewPos",camPos);
-
-        // Ground grid
-        glLineWidth(1.0f);
-        glm::mat4 gridM=glm::mat4(1);
-        uMat4("MVP",VP*gridM); uMat4("model",gridM);
-        uVec3("objectColor",C_GRID); uBool("isGlow",false); uBool("isWireframe",true);
-        glBindVertexArray(VAO_GRID);
-        glDrawArrays(GL_LINES,0,gridLineCount);
-
-        // Platforms (solid + outline — no shadow slab, grid replaces it)
-        glPolygonOffset(1.f,1.f);
-        for(int i=0;i<(int)pv.size();++i){
-            glm::vec3 col = pv[i].isGoal  ? C_GOAL
-                           : pv[i].isStart ? C_STRT
-                           : glow[i]       ? C_ILL
-                                           : C_PLAT;
-            bool g = pv[i].isGoal || glow[i];
-            drawSolid(pv[i].pos, PLAT_SC, col, VP, g);
-            drawOutline(pv[i].pos, PLAT_SC, VP);
-        }
-        glPolygonOffset(0,0);
-
-        // Illusion beacon pillars above aligned platforms
-        for(int i=0;i<(int)pv.size();++i){
-            if(!glow[i]) continue;
-            float pulse = 0.5f + 0.5f*sinf(now*4.0f);
-            glm::vec3 pillarPos = pv[i].pos + glm::vec3(0, 1.1f + pulse*0.25f, 0);
-            glm::vec3 pillarSc(0.14f, 0.9f + pulse*0.35f, 0.14f);
-            drawSolid(pillarPos, pillarSc, C_ILL, VP, true);
-            glm::vec3 capPos = pv[i].pos + glm::vec3(0, 2.0f + pulse*0.45f, 0);
-            drawSolid(capPos, glm::vec3(0.28f), C_ILL, VP, true);
-        }
-
-        // Player
-        glPolygonOffset(-2.f,-2.f);
-        drawSolid(playerPos,PLAY_SC,C_PLAY,VP,levelComplete);
-        drawOutline(playerPos,PLAY_SC,VP,0.022f);
-        glPolygonOffset(0,0);
-
-        // Window title
-        std::string st;
-        if(levelComplete)
-            st = (currentLevel+1<(int)levels.size())
-               ? " | COMPLETE! N=Next  R=Retry"
-               : " | ALL LEVELS DONE!  R=Replay";
-        else if(anyIll)
-            st = " | ILLUSION ACTIVE — press arrow key to cross!";
-        else
-            st = " | LMB=Orbit  Scroll=Zoom  Arrows=Move  R=Restart";
-
-        glfwSetWindowTitle(win,("Perspective Illusion  L"+std::to_string(currentLevel+1)+
-                                "/"+std::to_string(levels.size())+
-                                "  FPS:"+std::to_string((int)(1.f/std::max(dt,0.001f)))+st).c_str());
-
-        glfwSwapBuffers(win);
-        glfwPollEvents();
+        ui.time = now; ScreenContext ctx{ui, currentLevel, appState, (std::vector<Level>&)levels, mx, my, mouseClick, now, levelDone};
+        ui.beginFrame();
+        if(appState == AppState::HOME) drawHome(ctx); else if(appState == AppState::LEVEL_SELECT) drawLevelSelect(ctx); else if(appState == AppState::PLAYING) drawHUD(ctx, false, !player.movePath.empty()); else if(appState == AppState::COMPLETE) drawComplete(ctx); else if(appState == AppState::INFO) drawInfo(ctx);
+        ui.endFrame();
+        if(appState == AppState::PLAYING && glfwGetKey(win, 82) == 1) loadLevel(currentLevel);
+        if(appState == AppState::PLAYING && glfwGetKey(win, 256) == 1) appState = AppState::HOME;
+        mouseClick = false; glfwSwapBuffers(win); glfwPollEvents();
     }
-
-    glDeleteVertexArrays(1,&VAO);
-    glDeleteBuffers(1,&VBO);
-    glDeleteVertexArrays(1,&VAO_G);
-    glDeleteBuffers(1,&VBO_G);
-    glfwTerminate();
-    return 0;
+    glfwTerminate(); return 0;
 }
