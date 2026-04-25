@@ -18,7 +18,7 @@
 #include "ui_renderer.h"
 #include "screens.h"
 
-const int W=1280, H=720;
+int W=1280, H=720; // set from monitor at runtime
 float camYaw=-135.f, camPitch=38.f, camRadius=16.f;
 // Smooth camera lerp targets
 float tgtYaw=-135.f, tgtPitch=38.f, tgtRadius=16.f;
@@ -26,8 +26,17 @@ float lastX=W/2.f, lastY=H/2.f;
 bool firstMouse=true, dragging=false;
 
 AppState appState = AppState::HOME;
+CameraMode camMode = CameraMode::ORBIT;
 static int gID=0, skyID=0;
 float dt=0, lastFrame=0;
+
+// Health
+const int MAX_HEALTH = 3;
+int playerHealth = MAX_HEALTH;
+float lastDamageTime = -10.f; // invincibility timer
+
+// Season (derived from level)
+static inline int getSeason(int lv) { return (lv / 2) % 5; }
 
 std::vector<Level> levels = buildLevels();
 int currentLevel = 0;
@@ -149,10 +158,21 @@ void loadLevel(int idx) {
                 player.currentNodeId = n.id;
             }
     player.movePath.clear(); player.moveT = 0.f; particles.clear();
+    playerHealth = MAX_HEALTH;
+    lastDamageTime = -10.f;
+    camMode = CameraMode::ORBIT;
 }
 
 int main() {
     if(!glfwInit()) return -1;
+    // Detect primary monitor size and use 90% of it
+    {
+        GLFWmonitor* mon = glfwGetPrimaryMonitor();
+        if(mon) {
+            const GLFWvidmode* vm = glfwGetVideoMode(mon);
+            if(vm) { W = (int)(vm->width * 0.90f); H = (int)(vm->height * 0.90f); }
+        }
+    }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
     glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE); glfwWindowHint(GLFW_SAMPLES,8);
     GLFWwindow* win = glfwCreateWindow(W, H, "Perspective Illusion Puzzle", NULL, NULL);
@@ -196,20 +216,45 @@ int main() {
         
         const Level& lv = levels[currentLevel];
         glm::vec3 pivot = lv.pivot;
-        bool illActive = false; // set to true inside PLAYING block
-        glm::mat4 view = glm::lookAt(pivot + glm::vec3(camRadius*cosf(glm::radians(camYaw))*cosf(glm::radians(camPitch)), camRadius*sinf(glm::radians(camPitch)), camRadius*sinf(glm::radians(camYaw))*cosf(glm::radians(camPitch))), pivot, glm::vec3(0,1,0));
-        glm::mat4 proj = glm::perspective(glm::radians(44.f), (float)W/H, 0.1f, 150.f);
+        bool illActive = false;
+        int season = getSeason(currentLevel);
+
+        // ── Camera: orbit or first-person ──────────────────────────────────
+        glm::mat4 view;
+        float fovDeg = 44.f;
+        if(camMode == CameraMode::FIRST_PERSON) {
+            fovDeg = 70.f;
+            glm::vec3 eye = player.pos + glm::vec3(0, 0.65f, 0);
+            float yawR   = glm::radians(camYaw);
+            float pitchR = glm::radians(glm::clamp(camPitch,-80.f,80.f));
+            glm::vec3 front(
+                cosf(pitchR)*cosf(yawR+glm::radians(90.f)),
+                sinf(pitchR),
+                cosf(pitchR)*sinf(yawR+glm::radians(90.f)));
+            view = glm::lookAt(eye, eye + front, glm::vec3(0,1,0));
+        } else {
+            view = glm::lookAt(pivot + glm::vec3(
+                camRadius*cosf(glm::radians(camYaw))*cosf(glm::radians(camPitch)),
+                camRadius*sinf(glm::radians(camPitch)),
+                camRadius*sinf(glm::radians(camYaw))*cosf(glm::radians(camPitch))),
+                pivot, glm::vec3(0,1,0));
+        }
+        glm::mat4 proj = glm::perspective(glm::radians(fovDeg), (float)W/H, 0.1f, 150.f);
         glm::mat4 VP = proj * view;
 
         // 1. Skybox
         glDepthMask(GL_FALSE); skySh.use();
-        uMat4(skyID, "view", view); uMat4(skyID, "projection", proj); uFloat(skyID, "time", now); uInt(skyID, "levelIndex", currentLevel);
+        uMat4(skyID, "view", view); uMat4(skyID, "projection", proj);
+        uFloat(skyID, "time", now); uInt(skyID, "levelIndex", currentLevel);
+        uInt(skyID, "season", season);
         drawCube(skyID, glm::vec3(0), glm::vec3(120.f), glm::vec3(1), proj*glm::mat4(glm::mat3(view)), false, 0);
         glDepthMask(GL_TRUE);
 
-        if(appState == AppState::PLAYING) {
+        if(appState == AppState::PLAYING || appState == AppState::DEAD) {
             sh.use(); uFloat(gID, "time", now); uVec3(gID, "viewPos", pivot);
-            // Logic
+            uInt(gID, "season", season);
+            // Logic (only when playing, not dead)
+            if(appState == AppState::PLAYING) {
             if(!player.movePath.empty()) {
                 glm::vec3 target; for(auto& b : lv.blocks) for(auto& n : b.nodes) if(n.id == player.movePath[0]) target = getNodeWorldPos(b, n, now);
                 player.moveT += dt / player.MOVE_DUR;
@@ -235,6 +280,7 @@ int main() {
                 }
                 if(bId != "") player.movePath = findPath(player.currentNodeId, bId, lv, now, VP);
             }
+            } // end PLAYING-only logic
         // Draw Platforms
             illActive = false;
             std::set<std::string> ill; 
@@ -270,6 +316,12 @@ int main() {
             }
             illActive = !ill.empty();
             for(auto& b : lv.blocks) {
+                // Obstacle block: render as lava, skip normal logic
+                if(b.type == BlockType::OBSTACLE) {
+                    float pulse = 0.5f+0.5f*sinf(now*2.5f);
+                    drawCube(gID, b.pos, b.scale, b.color, VP, true, 6, 0.f);
+                    continue;
+                }
                 float rY = 0.f; bool isG = false; int mt = 0;
                 bool isStart = false;
                 if(b.type == BlockType::ROTATING) { float c=4.f; float p=fmodf(now,c)/c; rY=floorf(now/c)*(M_PI/2); if(p>0.75f) rY+=(pow((p-0.75f)*4,2)*(3-2*(p-0.75f)*4))*(M_PI/2); }
@@ -279,10 +331,10 @@ int main() {
                     if(n.id == lv.startNodeId) isStart = true;
                 }
                 if(isG && mt==0) mt = 4;
-                // Start platform: override with bright blue tint
+                // Start platform: bright cyan (Minecraft diamond-block blue)
                 glm::vec3 drawCol = b.color;
                 if(isStart && mt == 0) {
-                    drawCol = glm::vec3(0.35f, 0.65f, 1.0f); // vivid sky-blue
+                    drawCol = glm::vec3(0.0f, 0.85f, 1.0f);
                     mt = 0;
                 }
                 drawCube(gID, b.pos, b.scale, drawCol, VP, isG, mt, rY);
@@ -295,6 +347,44 @@ int main() {
                     drawBeacon(gID, getNodeWorldPos(b,n,now), glm::vec3(0.2f,1.f,0.45f), now, VP, 2.2f);
             }
             drawManFigure(gID, player.pos, now, VP);
+
+            // ── Obstacle collision / damage ───────────────────────────────────
+            if(appState == AppState::PLAYING) {
+                for(auto& b : lv.blocks) {
+                    if(!b.isDamaging) continue;
+                    glm::vec3 dangerCtr = b.pos + glm::vec3(0, 0.5f, 0);
+                    if(glm::distance(player.pos, dangerCtr) < 0.70f) {
+                        if(now - lastDamageTime > 1.0f) {
+                            playerHealth--;
+                            lastDamageTime = now;
+                            // Red damage burst
+                            for(int k=0;k<8;k++)
+                                spawnPart(player.pos+glm::vec3(0,0.4f,0),
+                                    glm::vec3((rand()%100-50)*0.04f,0.8f+rand()%100*0.01f,(rand()%100-50)*0.04f),
+                                    glm::vec3(1.f,0.2f,0.0f), 0.5f, 0.07f, PartType::SPARK);
+                            if(playerHealth <= 0) {
+                                appState = AppState::DEAD;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Season ambient particles ──────────────────────────────────────
+            if(appState == AppState::PLAYING) {
+                if(season == 2) { // Rainy: blue-gray streaks
+                    for(int k=0;k<4;k++) {
+                        glm::vec3 rp = player.pos + glm::vec3((rand()%40-20),6.f+rand()%4,(rand()%40-20));
+                        spawnPart(rp,glm::vec3(0,-7.f,0),glm::vec3(0.5f,0.65f,1.f),0.28f,0.02f,PartType::AMBIENT);
+                    }
+                } else if(season == 4) { // Winter: slow white snow
+                    for(int k=0;k<2;k++) {
+                        glm::vec3 sp2 = player.pos + glm::vec3((rand()%40-20),7.f+rand()%4,(rand()%40-20));
+                        spawnPart(sp2,glm::vec3((rand()%100-50)*0.01f,-0.7f,0),glm::vec3(1.f,1.f,1.f),2.5f,0.07f,PartType::AMBIENT);
+                    }
+                }
+            }
+
             // Render Particles
             for(int i=0; i<(int)particles.size(); i++) {
                 auto& p = particles[i]; p.pos += p.vel * dt; p.life -= dt;
@@ -302,16 +392,32 @@ int main() {
                 drawCube(gID, p.pos, glm::vec3(p.sz), p.col, VP, true, 5);
             }
         }
-        ui.time = now; ScreenContext ctx{ui, currentLevel, appState, (std::vector<Level>&)levels, mx, my, mouseClick, now, levelDone};
+        ui.time = now;
+        ScreenContext ctx{ui, currentLevel, appState, (std::vector<Level>&)levels,
+                          mx, my, mouseClick, now, levelDone,
+                          playerHealth, MAX_HEALTH, season, camMode};
         ui.beginFrame();
-        if(appState == AppState::HOME) drawHome(ctx);
+        if(appState == AppState::HOME)         drawHome(ctx);
         else if(appState == AppState::LEVEL_SELECT) drawLevelSelect(ctx);
-        else if(appState == AppState::PLAYING) drawHUD(ctx, illActive, !player.movePath.empty());
+        else if(appState == AppState::PLAYING)  drawHUD(ctx, illActive, !player.movePath.empty());
         else if(appState == AppState::COMPLETE) drawComplete(ctx);
-        else if(appState == AppState::INFO) drawInfo(ctx);
+        else if(appState == AppState::INFO)     drawInfo(ctx);
+        else if(appState == AppState::DEAD) {
+            drawHUD(ctx, false, false); // keep world visible
+            drawDead(ctx);
+            if(appState == AppState::PLAYING) { // respawn pressed
+                loadLevel(currentLevel);
+            }
+        }
         ui.endFrame();
         if(appState == AppState::PLAYING && glfwGetKey(win, 82) == 1) loadLevel(currentLevel);
         if(appState == AppState::PLAYING && glfwGetKey(win, 256) == 1) appState = AppState::HOME;
+        // V key (key=86) - toggle camera mode
+        static bool vWasDown = false;
+        bool vDown = (appState == AppState::PLAYING) && glfwGetKey(win, 86) == 1;
+        if(vDown && !vWasDown)
+            camMode = (camMode == CameraMode::ORBIT) ? CameraMode::FIRST_PERSON : CameraMode::ORBIT;
+        vWasDown = vDown;
         mouseClick = false; glfwSwapBuffers(win); glfwPollEvents();
     }
     glfwTerminate(); return 0;

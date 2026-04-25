@@ -39,6 +39,7 @@ static const char* controls[]={
     "Left-drag  —  Orbit camera",
     "Scroll     —  Zoom in / out",
     "Click      —  Move player",
+    "V          —  Toggle FP camera",
     "R          —  Restart level",
     "Esc        —  Back to menu",
 };
@@ -204,7 +205,7 @@ void drawHUD(ScreenContext& ctx, bool illActive, bool isMoving){
         ctx.state=AppState::INFO;
 
     // Controls cheat-sheet — bottom-left glass card
-    float cw=230.f, ch=114.f, cx2=12.f, cy2=H-ch-12.f;
+    float cw=240.f, ch=130.f, cx2=12.f, cy2=H-ch-12.f;
     ctx.ui.rect(cx2,cy2,cw,ch, glm::vec4(0.04f,0.05f,0.14f,0.72f),0.05f,2,
                 glm::vec4(1.f,1.f,1.f,0.22f));
     ctx.ui.text("CONTROLS", cx2+12, cy2+14, 12.f,
@@ -213,6 +214,39 @@ void drawHUD(ScreenContext& ctx, bool illActive, bool isMoving){
     for(auto& c:controls){
         ctx.ui.text(c, cx2+14, lcy, 11.f, glm::vec4(1.f,1.f,1.f,0.78f),0.f);
         lcy+=16.f;
+    }
+
+    // ── Health hearts — bottom-right ────────────────────────────────────
+    {
+        static const char* seasonName[]={
+            "Summer","Spring","Rainy","Autumn","Winter"};
+        const float HS=22.f, HG=6.f;
+        float hx=W-14.f-(ctx.maxHealth*(HS+HG)), hy=H-38.f;
+        ctx.ui.rect(hx-8,hy-8,(ctx.maxHealth*(HS+HG))+16,HS+16,
+            glm::vec4(0.04f,0.05f,0.14f,0.70f),0.04f,0);
+        for(int i=0;i<ctx.maxHealth;i++){
+            float hbx=hx+i*(HS+HG);
+            glm::vec4 hcol = (i < ctx.playerHealth)
+                ? glm::vec4(0.95f,0.20f,0.20f,1.f)
+                : glm::vec4(0.30f,0.10f,0.10f,0.7f);
+            ctx.ui.rect(hbx, hy, HS, HS, hcol, 0.04f, 0);
+            // inner pixel cross to mimic heart pixel art
+            if(i < ctx.playerHealth) {
+                ctx.ui.rect(hbx+4,hy+2,HS-8,4.f,glm::vec4(1,0.4f,0.4f,0.9f),0.f,0);
+                ctx.ui.rect(hbx+2,hy+4,HS-4,HS-10,glm::vec4(1,0.4f,0.4f,0.9f),0.f,0);
+            }
+        }
+        // Season label
+        ctx.ui.text(seasonName[ctx.season], W-12.f, hy-18.f, 12.f,
+            glm::vec4(ac.r,ac.g,ac.b,0.85f),0.f,false,true);
+    }
+
+    // Camera mode badge
+    {
+        const char* modeStr = (ctx.camMode==CameraMode::FIRST_PERSON) ? "FP VIEW" : "ORBIT";
+        float bw2=80.f;
+        ctx.ui.rect(W-bw2-8,58.f,bw2,22.f,glm::vec4(0.f,0.f,0.f,0.55f),0.03f,0);
+        ctx.ui.text(modeStr,W-8.f-bw2*0.5f,69.f,11.f,glm::vec4(1.f,1.f,1.f,0.9f),0.f,true,true);
     }
 
     // Illusion banner — top-centre animated
@@ -344,4 +378,31 @@ void drawInfo(ScreenContext& ctx){
     if(button(ctx,bx+bw+bgap,bby,bw,bh,"< Back",
               glm::vec4(1.f,1.f,1.f,0.15f),15.f))
         ctx.state=AppState::LEVEL_SELECT;
+}
+
+// ── DEAD (YOU DIED) ═══════════════════════════════════════════════════════════
+void drawDead(ScreenContext& ctx){
+    float W=ctx.ui.W, H=ctx.ui.H, t=ctx.time;
+
+    // Dark red overlay
+    ctx.ui.rect(0,0,W,H, glm::vec4(0.35f,0.01f,0.01f,0.60f),0.f,0);
+
+    // Panel
+    float pw=480.f, ph=260.f, px=(W-pw)*0.5f, py=(H-ph)*0.5f;
+    ctx.ui.rect(px,py,pw,ph, glm::vec4(0.10f,0.02f,0.02f,0.97f),0.06f,2,
+                glm::vec4(0.85f,0.12f,0.12f,1.f));
+    ctx.ui.rect(px,py,pw,6.f, glm::vec4(0.90f,0.15f,0.10f,0.9f),0.f,0);
+
+    // YOU DIED text
+    float p2 = 0.5f+0.5f*sinf(t*1.8f);
+    ctx.ui.text("YOU DIED", W*0.5f, py+76.f, 42.f,
+                glm::vec4(0.95f,0.15f+0.1f*p2,0.10f,1.f), 0.4f+0.2f*p2, true, true);
+    ctx.ui.text("Touched a lava obstacle!", W*0.5f, py+122.f, 15.f,
+                glm::vec4(1.f,0.60f,0.40f,0.85f), 0.f, true, true);
+
+    // Respawn button
+    float bw=200.f, bh=48.f;
+    if(button(ctx,(W-bw)*0.5f, py+166.f, bw, bh, "RESPAWN",
+              glm::vec4(0.72f,0.08f,0.08f,0.90f), 17.f))
+        ctx.state=AppState::PLAYING;
 }

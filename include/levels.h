@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-enum class BlockType { CUBE, PILLAR, ROTATING };
+enum class BlockType { CUBE, PILLAR, ROTATING, OBSTACLE };
 
 struct Node {
     std::string id;
@@ -18,6 +18,7 @@ struct Platform {
     std::vector<Node> nodes;
     bool isDecorative = false;
     glm::vec3 scale = glm::vec3(1, 1, 1);
+    bool isDamaging = false;
 };
 
 struct Level {
@@ -74,6 +75,9 @@ namespace C {
     static const glm::vec3 violet    (0.404f,0.227f,0.718f);
     static const glm::vec3 royal     (0.247f,0.318f,0.710f);
     static const glm::vec3 sienna    (0.475f,0.333f,0.282f);
+    // Minecraft-inspired additions
+    static const glm::vec3 lava      (0.85f, 0.22f, 0.02f);
+    static const glm::vec3 startBlue (0.10f, 0.72f, 1.00f);
 }
 
 inline std::vector<Level> buildLevels() {
@@ -85,7 +89,8 @@ inline std::vector<Level> buildLevels() {
         {
             {BlockType::CUBE, {0,0,0}, C::iceBlue,  {{"b1-n1", {0,0.5f,0}, {"b2-n1"}}}},
             {BlockType::CUBE, {1,0,0}, C::iceBlue,  {{"b2-n1", {0,0.5f,0}, {"b1-n1", "b3-n1"}}}},
-            {BlockType::CUBE, {2,0,0}, C::pinkOrch, {{"b3-n1", {0,0.5f,0}, {"b2-n1"}}}}
+            {BlockType::CUBE, {2,0,0}, C::pinkOrch, {{"b3-n1", {0,0.5f,0}, {"b2-n1"}}}},
+            {BlockType::OBSTACLE, {1,0,-0.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {1.0f, 0.5f, 0.0f}, -135.f, 38.f, 10.f, "Move right to reach the goal."
     });
@@ -97,7 +102,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::CUBE, {0,0,0}, C::iceBlue,  {{"start", {0,0.5f,0}, {"p1"}}}},
             {BlockType::CUBE, {1,0,0}, C::iceBlue,  {{"p1", {0,0.5f,0}, {"start"}}}},
             {BlockType::CUBE, {1,2,-2}, C::pinkOrch, {{"p2", {0,0.5f,0}, {"goal"}}}},
-            {BlockType::CUBE, {2,2,-2}, C::pinkOrch, {{"goal", {0,0.5f,0}, {"p2"}}}}
+            {BlockType::CUBE, {2,2,-2}, C::pinkOrch, {{"goal", {0,0.5f,0}, {"p2"}}}},
+            {BlockType::OBSTACLE, {0.5f,0,-0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {1.5f,2,-1.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {1.0f, 1.0f, -1.0f}, -135.f, 38.f, 12.f, "Align platforms to cross the gap."
     });
@@ -112,7 +119,8 @@ inline std::vector<Level> buildLevels() {
             {BlockType::CUBE, {0,0,1}, C::iceBlue, {{"s4", {0,0.5f,0}, {"s3", "s5"}}}},
             {BlockType::CUBE, {0,1,1}, C::iceBlue, {{"s5", {0,0.5f,0}, {"s4", "s6"}}}},
             {BlockType::CUBE, {0,2,1}, C::iceBlue, {{"s6", {0,0.5f,0}, {"s5", "g1"}}}},
-            {BlockType::CUBE, {0,2,0}, C::pinkOrch, {{"g1", {0,0.5f,0}, {"s6"}}}}
+            {BlockType::CUBE, {0,2,0}, C::pinkOrch, {{"g1", {0,0.5f,0}, {"s6"}}}},
+            {BlockType::OBSTACLE, {0.5f,0,0.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {0.5f, 1.0f, 0.5f}, -125.f, 40.f, 12.f, "Follow the spiral staircase."
     });
@@ -129,7 +137,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::CUBE, {4,4,-4}, C::pinkOrch, {{"g1", {0,0.5f,0}, {"p4"}}}},
             {BlockType::PILLAR, {2,1,0}, C::silverGray, {}, true},
             {BlockType::PILLAR, {2,2,0}, C::silverGray, {}, true},
-            {BlockType::PILLAR, {2,3,0}, C::silverGray, {}, true}
+            {BlockType::PILLAR, {2,3,0}, C::silverGray, {}, true},
+            {BlockType::OBSTACLE, {1,0,-0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {3,4,-3.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {2.0f, 2.0f, -2.0f}, -130.f, 36.f, 16.f, "A leap of faith requires alignment."
     });
@@ -162,7 +172,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::PILLAR, {5,5,0}, C::silverGray, {}, true},
             {BlockType::CUBE, {2,0,0}, C::mintGreen, {}, true},
             {BlockType::CUBE, {-1,0,1}, C::mintGreen, {}, true},
-            {BlockType::CUBE, {3,3,4}, C::periwink, {}, true}
+            {BlockType::CUBE, {3,3,4}, C::periwink, {}, true},
+            {BlockType::OBSTACLE, {0,1,2.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {4,3,4.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {3.0f, 3.0f, 2.5f}, -140.f, 38.f, 22.f, "Climb the palace and bridge the gap."
     });
@@ -184,7 +196,8 @@ inline std::vector<Level> buildLevels() {
             {BlockType::CUBE, {3,2,-3}, C::redCoral, {{"p1", {0,0.5f,0}, {"p2"}}}, true},
             {BlockType::CUBE, {3,2,-2}, C::redCoral, {{"p2", {0,0.5f,0}, {"p1"}}}, true},
             {BlockType::PILLAR, {3,-1,0}, C::silverGray, {}, true},
-            {BlockType::PILLAR, {3,-2,0}, C::silverGray, {}, true}
+            {BlockType::PILLAR, {3,-2,0}, C::silverGray, {}, true},
+            {BlockType::OBSTACLE, {2,0,-0.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {2.0f, 1.0f, -0.5f}, -130.f, 38.f, 14.f, "Sync with the clockwork rotation."
     });
@@ -212,7 +225,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::CUBE, {3,2,-7}, C::cream, {{"g1", {0,0.5f,0}, {"goal", "r2_arm2"}}}},
             {BlockType::CUBE, {3,2,-8}, C::cream, {{"goal", {0,0.5f,0}, {"g1"}}}},
             {BlockType::CUBE, {5,0,0}, C::salmon, {{"d1", {0,0.5f,0}, {"d2"}}}, true},
-            {BlockType::CUBE, {6,0,0}, C::salmon, {{"d2", {0,0.5f,0}, {"d1"}}}, true}
+            {BlockType::CUBE, {6,0,0}, C::salmon, {{"d2", {0,0.5f,0}, {"d1"}}}, true},
+            {BlockType::OBSTACLE, {2,0,-0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {3,2,-5.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {3.0f, 1.0f, -4.0f}, -125.f, 37.f, 18.f, "Two stages of illusion await."
     });
@@ -245,7 +260,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::PILLAR, { 0,1,4}, C::silverGray, {}, true},
             {BlockType::PILLAR, { 0,2,4}, C::silverGray, {}, true},
             {BlockType::PILLAR, { 0,3,4}, C::silverGray, {}, true},
-            {BlockType::PILLAR, { 0,4,4}, C::silverGray, {}, true}
+            {BlockType::PILLAR, { 0,4,4}, C::silverGray, {}, true},
+            {BlockType::OBSTACLE, {2,2,0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {1,5,3.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {2.0f, 2.5f, 2.0f}, -135.f, 38.f, 18.f, "Ascend to reach the golden goal."
     });
@@ -289,7 +306,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::PILLAR, {1,0,-4}, C::silverGray, {}, true},
             {BlockType::PILLAR, {1,1,-4}, C::silverGray, {}, true},
             {BlockType::PILLAR, {0,0,-4}, C::silverGray, {}, true},
-            {BlockType::PILLAR, {0,1,-4}, C::silverGray, {}, true}
+            {BlockType::PILLAR, {0,1,-4}, C::silverGray, {}, true},
+            {BlockType::OBSTACLE, {4,0,-0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {5,2,-3.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {3.0f, 1.0f, -2.0f}, -130.f, 37.f, 20.f, "Chain illusions to solve the machine."
     });
@@ -315,7 +334,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::PILLAR, {4,2,0}, C::rose, {}, true},
             {BlockType::PILLAR, {6,0,-3}, C::cyan, {}, true},
             {BlockType::PILLAR, {6,1,-3}, C::cyan, {}, true},
-            {BlockType::PILLAR, {6,2,-3}, C::cyan, {}, true}
+            {BlockType::PILLAR, {6,2,-3}, C::cyan, {}, true},
+            {BlockType::OBSTACLE, {3,0,-0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {5,3,-2.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {3.5f, 1.5f, -0.5f}, -130.f, 37.f, 18.f, "Navigate the floating crystal path."
     });
@@ -343,7 +364,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::PILLAR, {6,0,-4}, C::slateBlue, {}, true},
             {BlockType::PILLAR, {6,1,-4}, C::slateBlue, {}, true},
             {BlockType::PILLAR, {6,2,-4}, C::slateBlue, {}, true},
-            {BlockType::PILLAR, {6,3,-4}, C::slateBlue, {}, true}
+            {BlockType::PILLAR, {6,3,-4}, C::slateBlue, {}, true},
+            {BlockType::OBSTACLE, {3,2,-1.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {5,4,-3.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {3.0f, 2.0f, -2.0f}, -130.f, 37.f, 18.f, "Leap across garden terraces."
     });
@@ -374,7 +397,9 @@ inline std::vector<Level> buildLevels() {
             {BlockType::CUBE, {1,0,-1}, C::orangeRed, {}, true},
             {BlockType::CUBE, {1,0, 1}, C::orangeRed, {}, true},
             {BlockType::CUBE, {8,2,-3}, C::royal, {}, true},
-            {BlockType::CUBE, {8,2,-1}, C::royal, {}, true}
+            {BlockType::CUBE, {8,2,-1}, C::royal, {}, true},
+            {BlockType::OBSTACLE, {4,0,-0.5f}, C::lava, {}, true, {1,1,1}, true},
+            {BlockType::OBSTACLE, {7,2,-1.5f}, C::lava, {}, true, {1,1,1}, true}
         },
         {4.5f, 1.0f, -1.0f}, -130.f, 35.f, 22.f, "Find the hidden altar in the temple."
     });

@@ -11,15 +11,17 @@ uniform bool  isGlow;
 uniform bool  isWireframe;
 uniform float time;
 uniform int   matType;
+uniform int   season; // 0=summer 1=spring 2=rainy 3=autumn 4=winter
 // matType:
-//   0 = standard platform
-//   1 = goal platform  (green runes)
-//   2 = pillar         (stone bands)
-//   3 = player figure  (rim lit)
-//   4 = illusion glow  (iridescent pulse)
-//   5 = particle       (pure emissive)
+//   0 = standard platform (grass-top / dirt-sides)
+//   1 = goal platform     (gold block shimmer)
+//   2 = pillar            (cobblestone)
+//   3 = player figure     (rim lit)
+//   4 = illusion glow     (enchantment shimmer)
+//   5 = particle          (emissive)
+//   6 = obstacle/lava     (glowing lava cracks)
 
-// ─── Utility ───────────────────────────────────────────────────────────────
+// ─── Utility ──────────────────────────────────────────────────────────────────
 float hash(vec3 p) {
     p = fract(p * vec3(443.8975, 397.2973, 491.1871));
     p += dot(p.zxy, p.yxz + 19.19);
@@ -38,152 +40,160 @@ float noise3(vec3 p) {
 }
 float fbm(vec3 p) {
     float v = 0.0, a = 0.5;
-    for(int i = 0; i < 4; i++) { v += a * noise3(p); p *= 2.1; a *= 0.5; }
+    for(int i = 0; i < 3; i++) { v += a * noise3(p); p *= 2.1; a *= 0.5; }
     return v;
 }
-vec2 voronoi(vec2 p) {
-    vec2 ip = floor(p), fp = fract(p);
-    float md = 1e9; vec2 mp = vec2(0.0);
-    for(int j = -1; j <= 1; j++) for(int i = -1; i <= 1; i++) {
-        vec2 b = vec2(i, j);
-        vec2 r = b + vec2(hash2(ip+b), hash2(ip+b+vec2(3.7,1.3))) - fp;
-        float d = length(r);
-        if(d < md) { md = d; mp = ip + b; }
-    }
-    return vec2(md, hash2(mp));
+
+// ─── Minecraft-style directional lighting ─────────────────────────────────────
+// 6 distinct face brightnesses like the game does.
+vec3 mcLight(vec3 col, vec3 N) {
+    float topB    =  1.00 * max(dot(N, vec3( 0, 1, 0)), 0.0);
+    float botB    =  0.50 * max(dot(N, vec3( 0,-1, 0)), 0.0);
+    float northB  =  0.80 * max(dot(N, vec3( 0, 0,-1)), 0.0);
+    float southB  =  0.80 * max(dot(N, vec3( 0, 0, 1)), 0.0);
+    float eastB   =  0.60 * max(dot(N, vec3( 1, 0, 0)), 0.0);
+    float westB   =  0.60 * max(dot(N, vec3(-1, 0, 0)), 0.0);
+    float bright  = topB + botB + northB + southB + eastB + westB;
+    // ambient floor so no face is pitch-black
+    return col * max(bright, 0.38);
 }
 
-// ─── Lighting ──────────────────────────────────────────────────────────────
-vec3 blinnPhong(vec3 col, vec3 N, vec3 fragPos, float emissive) {
-    vec3 L  = normalize(vec3(0.55, 1.0, 0.35));
-    vec3 V  = normalize(viewPos - fragPos);
-    vec3 H  = normalize(L + V);
-
-    float diff  = max(dot(N, L), 0.0) * 0.65 + 0.35; // ambient + diffuse
-    float spec  = pow(max(dot(N, H), 0.0), 64.0) * 0.5;
-    vec3  result = col * diff + vec3(1.0) * spec * (0.3 + 0.7 * (1.0 - dot(N, vec3(0,1,0))));
-    result += col * emissive;
-    return result;
+// ─── Season grass tint ────────────────────────────────────────────────────────
+vec3 seasonGrass(vec3 base) {
+    if (season == 1) return mix(base, vec3(0.55,0.95,0.22), 0.35); // spring: lime
+    if (season == 2) return mix(base, vec3(0.22,0.48,0.18), 0.40); // rainy: dark
+    if (season == 3) return mix(base, vec3(0.70,0.42,0.10), 0.45); // autumn: orange-brown
+    if (season == 4) return mix(base, vec3(0.88,0.92,0.98), 0.55); // winter: snowy white
+    return base; // summer: default
 }
 
 void main() {
-    // ─── Wireframe overlay ────────────────────────────────────────────────
+    // ─── Wireframe overlay ────────────────────────────────────────────────────
     if (isWireframe) {
-        FragColor = vec4(0.02, 0.04, 0.12, 0.9);
+        FragColor = vec4(0.05, 0.05, 0.05, 0.85);
         return;
     }
 
-    // ─── Particle (pure emissive) ─────────────────────────────────────────
+    vec3 N = normalize(Normal);
+    float topF  = clamp(dot(N, vec3(0,1,0)), 0.0, 1.0);
+
+    vec3  surfaceCol = objectColor;
+
+    // ─── matType 5: Particle (pure emissive) ──────────────────────────────────
     if (matType == 5) {
         FragColor = vec4(objectColor * 2.5, 0.85);
         return;
     }
 
-    vec3 N    = normalize(Normal);
-    float topF = clamp(dot(N, vec3(0, 1, 0)), 0.0, 1.0);
-    float sideF = 1.0 - topF;
+    // ─── matType 0: Minecraft grass-top / dirt-sides ──────────────────────────
+    if (matType == 0) {
+        vec3 grassColor = seasonGrass(vec3(0.38, 0.72, 0.22));
+        vec3 dirtColor  = vec3(0.545, 0.388, 0.196);
 
-    vec3  surfaceCol = objectColor;
-    float emission   = 0.0;
-
-    // ─── matType 0: Standard platform ─────────────────────────────────────
-    if (matType == 0 || matType == 2) {
         if (topF > 0.7) {
-            // Cracked-tile top face via Voronoi
-            vec2 vor = voronoi(FragPos.xz * 2.0);
-            float crack = 1.0 - smoothstep(0.0, 0.05, vor.x);
-            surfaceCol = objectColor * (0.75 + vor.y * 0.3);
-            surfaceCol = mix(surfaceCol, objectColor * 0.1, crack * 0.7);
-            // Glowing edge rim
+            // Flat grass top with subtle noise variation
+            float n = noise3(vec3(FragPos.x * 4.0, 0.0, FragPos.z * 4.0)) * 0.12;
+            surfaceCol = grassColor * (0.90 + n);
+            // Edge brightening (block rim highlight)
             float edge = max(abs(LocalPos.x), abs(LocalPos.z));
-            float rim  = smoothstep(0.42, 0.5, edge);
-            surfaceCol += objectColor * rim * 1.8;
-            emission   += rim * 0.6;
+            float rim  = smoothstep(0.44, 0.50, edge);
+            surfaceCol += grassColor * rim * 0.5;
         } else {
-            // Side face: layered noise bands
-            float n = fbm(vec3(FragPos.xz * 0.4, FragPos.y * 1.5));
-            float band = sin(FragPos.y * 10.0 + n * 4.0) * 0.5 + 0.5;
-            surfaceCol = objectColor * (0.55 + band * 0.45);
-            // Vertical edge glow
-            float vedge = max(abs(LocalPos.x), abs(LocalPos.z));
-            float vrim  = smoothstep(0.45, 0.5, vedge);
-            surfaceCol += objectColor * vrim * 1.2;
-            emission   += vrim * 0.3;
+            // Dirt sides with thin green strip at top
+            float n = noise3(FragPos * vec3(3.0, 1.5, 3.0)) * 0.15;
+            surfaceCol = dirtColor * (0.80 + n);
+            // Grass-cap strip at top edge of side face
+            float ylocal = LocalPos.y;
+            float grassStrip = smoothstep(0.38, 0.50, ylocal);
+            surfaceCol = mix(surfaceCol, grassColor * 0.85, grassStrip * 0.9);
         }
-        if (matType == 2) {
-            // Pillar: stone banding override
-            float band2 = sin(FragPos.y * 6.0 + noise3(FragPos * 1.2) * 2.0) * 0.5 + 0.5;
-            surfaceCol *= (0.6 + band2 * 0.4);
-        }
+        surfaceCol = mcLight(surfaceCol, N);
     }
-    // ─── matType 1: Goal platform (animated rune ring) ────────────────────
+
+    // ─── matType 1: Goal platform (gold block) ────────────────────────────────
     else if (matType == 1) {
-        float n = fbm(FragPos * 1.0 + time * 0.4);
-        surfaceCol = mix(vec3(0.08, 0.72, 0.28), vec3(0.02, 0.38, 0.15), n);
-        if (topF > 0.7) {
-            // Rotating rune rings
-            vec2 c  = fract(FragPos.xz) - 0.5;
-            float r = length(c);
-            float theta = atan(c.y, c.x);
-            float ring1 = smoothstep(0.03, 0.0, abs(r - 0.36)) * (0.6 + 0.4 * sin(theta * 6.0 - time * 2.5));
-            float ring2 = smoothstep(0.025, 0.0, abs(r - 0.22)) * (0.6 + 0.4 * sin(theta * 4.0 + time * 3.0));
-            float ring3 = smoothstep(0.02, 0.0, abs(r - 0.10)) * (0.6 + 0.4 * sin(time * 6.0));
-            float runes = ring1 + ring2 + ring3;
-            runes *= (0.5 + 0.5 * sin(time * 2.0));
-            surfaceCol += vec3(0.3, 1.0, 0.5) * runes * 2.5;
-            emission   += runes * 1.2;
-        }
+        vec3 goldBase = vec3(0.92, 0.76, 0.10);
+        float shine = noise3(FragPos * 6.0 + time * 0.6) * 0.15;
+        float pulse = 0.5 + 0.5 * sin(time * 2.2);
+        surfaceCol = goldBase * (0.85 + shine);
+        // Animated cross-hatch shimmer
+        float cx = fract(FragPos.x * 2.0 + time * 0.4);
+        float cz = fract(FragPos.z * 2.0 - time * 0.4);
+        float grid = max(smoothstep(0.85,1.0,cx), smoothstep(0.85,1.0,cz));
+        surfaceCol += vec3(1.0, 0.90, 0.40) * grid * pulse * 1.2;
+        surfaceCol = mcLight(surfaceCol, N);
     }
-    // ─── matType 3: Player figure (rim light) ─────────────────────────────
+
+    // ─── matType 2: Pillar (cobblestone) ──────────────────────────────────────
+    else if (matType == 2) {
+        // Chunky cell-noise for cobblestone look
+        vec3 fp = FragPos * 2.5;
+        vec3 ic = floor(fp);
+        float cell = hash(ic) * 0.35;
+        float seam = step(0.85, fract(fp.x)) + step(0.85, fract(fp.y)) + step(0.85, fract(fp.z));
+        seam = clamp(seam, 0.0, 1.0);
+        surfaceCol = objectColor * (0.70 + cell);
+        surfaceCol = mix(surfaceCol, vec3(0.15), seam * 0.6);
+        surfaceCol = mcLight(surfaceCol, N);
+    }
+
+    // ─── matType 3: Player figure (rim lit, blocky) ───────────────────────────
     else if (matType == 3) {
         vec3 V3 = normalize(viewPos - FragPos);
         float rim = 1.0 - max(dot(N, V3), 0.0);
-        rim = pow(rim, 3.0) * 1.5;
-        surfaceCol = objectColor;
-        surfaceCol += vec3(1.0, 0.8, 0.6) * rim * 0.8;
-        emission = rim * 0.4;
+        rim = pow(rim, 2.5) * 1.2;
+        surfaceCol = objectColor * (0.85 + rim * 0.4);
+        surfaceCol = mcLight(surfaceCol, N);
     }
-    // ─── matType 4: Illusion-aligned glow (iridescent) ────────────────────
+
+    // ─── matType 4: Illusion-aligned glow (enchantment shimmer) ──────────────
     else if (matType == 4) {
         float pulse = 0.5 + 0.5 * sin(time * 3.5);
-        float n2    = fbm(FragPos * 2.5 - time * 0.6);
-        // Iridescent hue shift
-        float hueShift = n2 * 2.0 + time * 0.4;
-        vec3 iri = vec3(
-            0.5 + 0.5 * sin(hueShift),
-            0.5 + 0.5 * sin(hueShift + 2.094),
-            0.5 + 0.5 * sin(hueShift + 4.188)
-        );
-        surfaceCol = mix(objectColor, iri, 0.5 + 0.4 * pulse);
-
-        // Sparkling top face
+        // Enchantment table-style: purple/blue sheen
+        float n2 = noise3(FragPos * 3.0 - time * 0.5);
+        vec3 enchant = vec3(0.35 + 0.3*sin(n2*6.28+time),
+                            0.20 + 0.2*sin(n2*6.28+time+2.1),
+                            0.80 + 0.2*sin(n2*6.28-time));
+        surfaceCol = mix(objectColor, enchant, 0.55 + 0.35*pulse);
+        // Blocky sparkle on top
         if (topF > 0.5) {
-            float spark = pow(hash2(fract(FragPos.xz * 8.0 + time * 0.3)), 8.0) * 4.0;
-            surfaceCol += vec3(1.0, 0.95, 0.7) * spark;
-            emission += spark * 0.5;
+            float bsp = hash(floor(FragPos * 4.0 + time * 0.5));
+            float spark = step(0.97, bsp) * pulse * 2.0;
+            surfaceCol += vec3(0.8, 0.9, 1.0) * spark;
         }
-
-        // Voronoi crack lines glowing gold
-        vec2 vor2 = voronoi(FragPos.xz * 2.5);
-        float vEdge = 1.0 - smoothstep(0.0, 0.05, vor2.x);
-        surfaceCol += vec3(1.0, 0.8, 0.2) * vEdge * pulse * 1.5;
-        emission += vEdge * pulse * 0.8;
+        surfaceCol = mcLight(surfaceCol, N);
     }
 
-    // ─── Final lighting ───────────────────────────────────────────────────
-    vec3 result = blinnPhong(surfaceCol, N, FragPos, emission);
+    // ─── matType 6: Obstacle / Lava block ────────────────────────────────────
+    else if (matType == 6) {
+        // Dark base with animated orange-red cracks
+        float pulse = 0.5 + 0.5 * sin(time * 2.8);
+        float n1 = fbm(FragPos * 3.0 - time * 0.4);
+        float n2 = fbm(FragPos * 6.0 + time * 0.6);
+        vec3 darkBase = vec3(0.12, 0.04, 0.01);
+        vec3 lavaGlow = vec3(1.0, 0.38 + 0.12*pulse, 0.0);
+        float crack = smoothstep(0.3, 0.55, n1) * (0.5 + 0.5 * n2);
+        surfaceCol = mix(darkBase, lavaGlow * (0.9 + 0.4*pulse), crack);
+        // Top face: brighter lava pool
+        float pool = 0.0;
+        if (topF > 0.6) {
+            pool = fbm(vec3(FragPos.x * 2.0, FragPos.y, FragPos.z * 2.0) + vec3(0.0, time * 0.3, 0.0));
+            surfaceCol = mix(surfaceCol, lavaGlow * 1.4, smoothstep(0.3, 0.7, pool) * 0.7);
+        }
+        // Always emissive, skip mcLight
+        FragColor = vec4(clamp(surfaceCol, 0.0, 1.0), 1.0);
+        return;
+    }
 
-    // Glow pulsing overlay (for illusion-aligned platforms)
+    // ─── Glow overlay for illusion-aligned blocks ─────────────────────────────
     if (isGlow) {
         float pulse = 0.5 + 0.5 * sin(time * 4.5);
-        result += objectColor * pulse * 0.6;
+        surfaceCol += objectColor * pulse * 0.35;
     }
 
-    // Tone mapping (ACES filmic)
-    result = result * (2.51 * result + 0.03) / (result * (2.43 * result + 0.59) + 0.14);
-    result = clamp(result, 0.0, 1.0);
-    // Gamma correction
-    result = pow(result, vec3(1.0 / 2.2));
+    // Simple gamma + tone (much lighter than before, more Minecraft-bright)
+    surfaceCol = clamp(surfaceCol, 0.0, 1.0);
+    surfaceCol = pow(surfaceCol, vec3(1.0 / 2.0)); // softer gamma
 
-    FragColor = vec4(result, 1.0);
+    FragColor = vec4(surfaceCol, 1.0);
 }
