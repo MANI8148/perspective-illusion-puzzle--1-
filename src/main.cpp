@@ -1,4 +1,3 @@
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -19,9 +18,14 @@
 #include "screens.h"
 
 int W=1280, H=720; // set from monitor at runtime
+
+// ── Orbit camera state ────────────────────────────────────────────────────────
 float camYaw=-135.f, camPitch=38.f, camRadius=16.f;
-// Smooth camera lerp targets
-float tgtYaw=-135.f, tgtPitch=38.f, tgtRadius=16.f;
+float tgtYaw=-135.f, tgtPitch=38.f, tgtRadius=16.f; // smooth lerp targets
+
+// ── First-person camera state (separate angles so switching is seamless) ──────
+float fpYaw=-135.f, fpPitch=0.f;   // first-person look direction
+
 float lastX=W/2.f, lastY=H/2.f;
 bool firstMouse=true, dragging=false;
 
@@ -33,7 +37,7 @@ float dt=0, lastFrame=0;
 // Health
 const int MAX_HEALTH = 3;
 int playerHealth = MAX_HEALTH;
-float lastDamageTime = -10.f; // invincibility timer
+float lastDamageTime = -10.f;
 
 // Season (derived from level)
 static inline int getSeason(int lv) { return (lv / 2) % 5; }
@@ -86,7 +90,6 @@ void drawOutline(int id, glm::vec3 pos, glm::vec3 sc, const glm::mat4& VP, float
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-// Draw a thin vertical beacon pillar above a node
 void drawBeacon(int id, glm::vec3 base, glm::vec3 col, float now, const glm::mat4& VP, float height=1.8f) {
     float pulse = 0.5f+0.5f*sinf(now*3.f);
     for(int i=0;i<4;i++) {
@@ -100,23 +103,20 @@ void drawBeacon(int id, glm::vec3 base, glm::vec3 col, float now, const glm::mat
     drawCube(id, base + glm::vec3(0, 0.55f+height+0.1f, 0), glm::vec3(hs, 0.04f, hs), col*(1.f+pulse), VP, true, 5);
 }
 
-void drawManFigure(int id, glm::vec3 pos, float time, const glm::mat4& VP) {
-    // pos = node world pos = block top surface (block.pos.y + 0.5)
-    // Draw the figure so feet sit exactly on pos (y=0 relative)
+void drawManFigure(int id, glm::vec3 pos, float time, const glm::mat4& VP, bool fpMode=false) {
+    // In first-person mode, skip drawing the player figure (you are the player)
+    if(fpMode) return;
+
     float bob = sinf(time * 2.5f) * 0.04f;
     float br  = 1.0f + sinf(time * 1.8f) * 0.02f;
-    glm::vec3 body  = glm::vec3(0.92f, 0.35f, 0.35f); // red body
-    glm::vec3 head  = glm::vec3(1.00f, 0.87f, 0.78f); // skin head
-    glm::vec3 leg   = glm::vec3(0.25f, 0.35f, 0.75f); // blue legs
-    // Legs (feet at pos.y)
+    glm::vec3 body  = glm::vec3(0.92f, 0.35f, 0.35f);
+    glm::vec3 head  = glm::vec3(1.00f, 0.87f, 0.78f);
+    glm::vec3 leg   = glm::vec3(0.25f, 0.35f, 0.75f);
     drawCube(id, pos + glm::vec3(-0.08f, 0.12f+bob, 0), glm::vec3(0.10f, 0.24f, 0.10f), leg, VP, false, 3);
     drawCube(id, pos + glm::vec3( 0.08f, 0.12f+bob, 0), glm::vec3(0.10f, 0.24f, 0.10f), leg, VP, false, 3);
-    // Body (torso sits above legs)
     drawCube(id, pos + glm::vec3(0, 0.40f+bob, 0), glm::vec3(0.26f, 0.30f, 0.14f)*br, body, VP, false, 3);
-    // Arms
     drawCube(id, pos + glm::vec3(-0.22f, 0.38f+bob, 0), glm::vec3(0.08f, 0.22f, 0.08f), body, VP, false, 3);
     drawCube(id, pos + glm::vec3( 0.22f, 0.38f+bob, 0), glm::vec3(0.08f, 0.22f, 0.08f), body, VP, false, 3);
-    // Head
     drawCube(id, pos + glm::vec3(0, 0.65f+bob, 0), glm::vec3(0.20f)*br, head, VP, false, 3);
 }
 
@@ -150,10 +150,10 @@ void loadLevel(int idx) {
     const Level& lv = levels[idx];
     camYaw = lv.initYaw; camPitch = lv.initPitch; camRadius = lv.initRadius;
     tgtYaw = camYaw; tgtPitch = camPitch; tgtRadius = camRadius;
+    fpYaw = camYaw; fpPitch = 0.f; // reset FP angles too
     for(auto& b : lv.blocks)
         for(auto& n : b.nodes)
             if(n.id == lv.startNodeId) {
-                // Node offset is {0, 0.5, 0} — this IS the block top surface
                 player.pos = b.pos + n.offset;
                 player.currentNodeId = n.id;
             }
@@ -165,7 +165,6 @@ void loadLevel(int idx) {
 
 int main() {
     if(!glfwInit()) return -1;
-    // Detect primary monitor size and use 90% of it
     {
         GLFWmonitor* mon = glfwGetPrimaryMonitor();
         if(mon) {
@@ -178,23 +177,54 @@ int main() {
     GLFWwindow* win = glfwCreateWindow(W, H, "Perspective Illusion Puzzle", NULL, NULL);
     if(!win) return -1;
     glfwMakeContextCurrent(win); glfwSwapInterval(1);
+
+    // ── Mouse cursor callback ────────────────────────────────────────────────
     glfwSetCursorPosCallback(win, [](GLFWwindow*, double x, double y){
         if(appState != AppState::PLAYING) { firstMouse=true; return; }
-        if(glfwGetMouseButton(glfwGetCurrentContext(), 0) != 1) { firstMouse=true; dragging=false; return; }
-        if(firstMouse) { lastX=(float)x; lastY=(float)y; firstMouse=false; dragging=true; }
-        if(dragging) { camYaw += (float)(x - lastX) * 0.25f; camPitch += (float)(lastY - y) * 0.25f; camPitch = glm::clamp(camPitch, 5.f, 85.f); }
-        lastX=(float)x; lastY=(float)y;
+
+        if(camMode == CameraMode::FIRST_PERSON) {
+            // FP: always capture look movement (cursor is locked)
+            if(firstMouse) { lastX=(float)x; lastY=(float)y; firstMouse=false; return; }
+            float dx = ((float)x - lastX) * 0.25f;
+            float dy = ((float)y - lastY) * 0.25f;
+            fpYaw   += dx;
+            fpPitch -= dy;
+            fpPitch  = glm::clamp(fpPitch, -89.f, 89.f);
+            lastX=(float)x; lastY=(float)y;
+        } else {
+            // Orbit: drag with left mouse button
+            if(glfwGetMouseButton(glfwGetCurrentContext(), 0) != 1) { firstMouse=true; dragging=false; return; }
+            if(firstMouse) { lastX=(float)x; lastY=(float)y; firstMouse=false; dragging=true; }
+            if(dragging) {
+                float dx = ((float)x - lastX) * 0.25f;
+                float dy = ((float)y - lastY) * -0.25f;
+                tgtYaw   += dx;
+                tgtPitch += dy;
+                tgtPitch  = glm::clamp(tgtPitch, 1.f, 89.f);
+            }
+            lastX=(float)x; lastY=(float)y;
+        }
     });
-    glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy){ if(appState==AppState::PLAYING) { camRadius -= (float)dy; camRadius=glm::clamp(camRadius, 5.f, 40.f); } });
+
+    glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy){
+        if(appState==AppState::PLAYING && camMode==CameraMode::ORBIT) {
+            tgtRadius -= (float)dy * 1.2f;
+            tgtRadius  = glm::clamp(tgtRadius, 5.f, 40.f);
+        }
+    });
+
     static bool mouseClick = false;
-    glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int){ if(b==0 && a==1) mouseClick=true; });
+    glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int){
+        if(b==0 && a==1) mouseClick=true;
+    });
+
     if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
     glEnable(GL_DEPTH_TEST); glEnable(GL_MULTISAMPLE); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     Shader sh("shaders/vertex.glsl", "shaders/fragment.glsl"); gID = sh.ID;
     Shader skySh("shaders/sky_vert.glsl", "shaders/sky_frag.glsl"); skyID = skySh.ID;
     UIRenderer ui; ui.init(W, H);
-    
+
     float verts[]={
         -.5f,-.5f,-.5f,0,0,-1, .5f,-.5f,-.5f,0,0,-1, .5f,.5f,-.5f,0,0,-1, .5f,.5f,-.5f,0,0,-1, -.5f,.5f,-.5f,0,0,-1, -.5f,-.5f,-.5f,0,0,-1,
         -.5f,-.5f,.5f,0,0,1, .5f,-.5f,.5f,0,0,1, .5f,.5f,.5f,0,0,1, .5f,.5f,.5f,0,0,1, -.5f,.5f,.5f,0,0,1, -.5f,-.5f,.5f,0,0,1,
@@ -209,84 +239,194 @@ int main() {
     glVertexAttribPointer(1,3,GL_FLOAT,0,6*sizeof(float),(void*)(3*sizeof(float))); glEnableVertexAttribArray(1);
 
     loadLevel(0);
+
+    // ── Main loop ────────────────────────────────────────────────────────────
     while(!glfwWindowShouldClose(win)){
         float now = (float)glfwGetTime(); dt = now - lastFrame; lastFrame = now;
         double mx, my; glfwGetCursorPos(win, &mx, &my);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
+
         const Level& lv = levels[currentLevel];
         glm::vec3 pivot = lv.pivot;
         bool illActive = false;
         int season = getSeason(currentLevel);
 
-        // ── Camera: orbit or first-person ──────────────────────────────────
+        // ── Camera: smooth lerp orbit / immersive first-person ───────────────
         glm::mat4 view;
         float fovDeg = 44.f;
+
         if(camMode == CameraMode::FIRST_PERSON) {
-            fovDeg = 70.f;
-            glm::vec3 eye = player.pos + glm::vec3(0, 0.65f, 0);
-            float yawR   = glm::radians(camYaw);
-            float pitchR = glm::radians(glm::clamp(camPitch,-80.f,80.f));
+            // ── FIRST-PERSON (Minecraft style) ───────────────────────────────
+            fovDeg = 75.f; // wider FOV for immersion
+
+            // Eye position slightly above player model head
+            float headBob = 0.f;
+            if(!player.movePath.empty())
+                headBob = sinf(now * 9.5f) * 0.025f;
+
+            glm::vec3 eye = player.pos + glm::vec3(0, 0.70f + headBob, 0);
+
+            float yawR   = glm::radians(fpYaw);
+            float pitchR = glm::radians(fpPitch);
             glm::vec3 front(
-                cosf(pitchR)*cosf(yawR+glm::radians(90.f)),
+                cosf(pitchR) * cosf(yawR),
                 sinf(pitchR),
-                cosf(pitchR)*sinf(yawR+glm::radians(90.f)));
+                cosf(pitchR) * sinf(yawR));
+
             view = glm::lookAt(eye, eye + front, glm::vec3(0,1,0));
         } else {
-            view = glm::lookAt(pivot + glm::vec3(
-                camRadius*cosf(glm::radians(camYaw))*cosf(glm::radians(camPitch)),
-                camRadius*sinf(glm::radians(camPitch)),
-                camRadius*sinf(glm::radians(camYaw))*cosf(glm::radians(camPitch))),
-                pivot, glm::vec3(0,1,0));
+            // ── ORBIT (god-view puzzle camera) ───────────────────────────────
+            // Smooth lerp toward targets
+            float lerpT = glm::min(1.0f, dt * 10.f);
+            camYaw    += (tgtYaw    - camYaw)    * lerpT;
+            camPitch  += (tgtPitch  - camPitch)  * lerpT;
+            camRadius += (tgtRadius - camRadius) * lerpT;
+
+            glm::vec3 camPos(
+                camRadius * cosf(glm::radians(camYaw)) * cosf(glm::radians(camPitch)),
+                camRadius * sinf(glm::radians(camPitch)),
+                camRadius * sinf(glm::radians(camYaw)) * cosf(glm::radians(camPitch)));
+            view = glm::lookAt(pivot + camPos, pivot, glm::vec3(0,1,0));
         }
+
         glm::mat4 proj = glm::perspective(glm::radians(fovDeg), (float)W/H, 0.1f, 150.f);
         glm::mat4 VP = proj * view;
 
-        // 1. Skybox
-        glDepthMask(GL_FALSE); skySh.use();
-        uMat4(skyID, "view", view); uMat4(skyID, "projection", proj);
-        uFloat(skyID, "time", now); uInt(skyID, "levelIndex", currentLevel);
-        uInt(skyID, "season", season);
-        drawCube(skyID, glm::vec3(0), glm::vec3(120.f), glm::vec3(1), proj*glm::mat4(glm::mat3(view)), false, 0);
-        glDepthMask(GL_TRUE);
+        // ── Skybox ───────────────────────────────────────────────────────────
+        {
+            glDepthMask(GL_FALSE);
+            glDepthFunc(GL_LEQUAL); // pass at depth=1 (sky is at max depth via xyww trick)
+            skySh.use();
+            // Strip translation from view so sky stays at infinity around camera
+            glm::mat4 skyView = glm::mat4(glm::mat3(view));
+            uMat4(skyID, "view", skyView);
+            uMat4(skyID, "projection", proj);
+            uFloat(skyID, "time", now);
+            uInt(skyID, "levelIndex", currentLevel);
+            uInt(skyID, "season", season);
+            // Draw unit cube — sky_vert.glsl uses xyww trick to push to far plane
+            glm::mat4 skyMVP = proj * skyView; // no model translate, unit cube at origin
+            glBindVertexArray(VAO);
+            // Temporarily disable face culling so inside of cube is visible
+            glDisable(GL_CULL_FACE);
+            uMat4(skyID, "MVP", skyMVP);
+            uMat4(skyID, "model", glm::mat4(1.f));
+            uVec3(skyID, "objectColor", glm::vec3(1.f));
+            uBool(skyID, "isGlow", false);
+            uBool(skyID, "isWireframe", false);
+            uInt(skyID, "matType", 0);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS); // restore default
+        }
 
         if(appState == AppState::PLAYING || appState == AppState::DEAD) {
             sh.use(); uFloat(gID, "time", now); uVec3(gID, "viewPos", pivot);
             uInt(gID, "season", season);
-            // Logic (only when playing, not dead)
+
+            // ── Game logic (only when alive) ─────────────────────────────────
             if(appState == AppState::PLAYING) {
-            if(!player.movePath.empty()) {
-                glm::vec3 target; for(auto& b : lv.blocks) for(auto& n : b.nodes) if(n.id == player.movePath[0]) target = getNodeWorldPos(b, n, now);
-                player.moveT += dt / player.MOVE_DUR;
-                if(player.moveT >= 1.f) { player.pos = target; player.currentNodeId = player.movePath[0]; player.movePath.erase(player.movePath.begin()); player.moveT = 0.f; if(player.currentNodeId == lv.goalNodeId) { levelDone[currentLevel]=true; appState = AppState::COMPLETE; } }
-                else {
-                    float et = player.moveT*player.moveT*(3-2*player.moveT);
-                    player.pos = glm::mix(player.pos, target, et);
-                    player.pos.y += sinf(et*M_PI)*0.25f;
-                    // Trail sparkles
-                    if(fmodf(now, 0.05f) < dt*2.f)
-                        spawnPart(player.pos+glm::vec3((float)(rand()%100-50)*0.005f,0.3f,(float)(rand()%100-50)*0.005f),
-                                  glm::vec3(0,0.8f+((float)(rand()%100)/100.f)*1.2f,0),
-                                  glm::vec3(0.5f,1.f,0.8f), 0.4f, 0.05f, PartType::TRAIL);
-                }
-            } else if(mouseClick) {
-                glm::vec2 mNDC((mx/W)*2-1, -((my/H)*2-1)); float bestD = 0.1f; std::string bId = "";
-                for(auto& b : lv.blocks) for(auto& n : b.nodes) { 
-                    glm::vec4 sp = VP * glm::vec4(getNodeWorldPos(b, n, now), 1.f); 
-                    if (sp.w > 0.0f) {
-                        float d = glm::distance(mNDC, glm::vec2(sp.x/sp.w, sp.y/sp.w)); 
-                        if(d < bestD) { bestD = d; bId = n.id; } 
+                if(!player.movePath.empty()) {
+                    glm::vec3 target;
+                    for(auto& b : lv.blocks) for(auto& n : b.nodes)
+                        if(n.id == player.movePath[0]) target = getNodeWorldPos(b, n, now);
+
+                    player.moveT += dt / player.MOVE_DUR;
+                    if(player.moveT >= 1.f) {
+                        player.pos = target;
+                        player.currentNodeId = player.movePath[0];
+                        player.movePath.erase(player.movePath.begin());
+                        player.moveT = 0.f;
+                        if(player.currentNodeId == lv.goalNodeId) {
+                            levelDone[currentLevel]=true;
+                            appState = AppState::COMPLETE;
+                            // Ensure cursor is released for UI
+                            glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                            glfwSetCursorPos(win, W / 2.0, H / 2.0);
+                        }
+                    } else {
+                        float et = player.moveT*player.moveT*(3.f-2.f*player.moveT);
+                        player.pos = glm::mix(player.pos, target, et);
+                        player.pos.y += sinf(et*(float)M_PI)*0.25f;
+                        // Trail sparkles
+                        if(fmodf(now, 0.05f) < dt*2.f)
+                            spawnPart(player.pos+glm::vec3((float)(rand()%100-50)*0.005f,0.3f,(float)(rand()%100-50)*0.005f),
+                                      glm::vec3(0,0.8f+((float)(rand()%100)/100.f)*1.2f,0),
+                                      glm::vec3(0.5f,1.f,0.8f), 0.4f, 0.05f, PartType::TRAIL);
                     }
+                } else if(camMode == CameraMode::FIRST_PERSON && player.movePath.empty()) {
+                    // Minecraft-style movement: WASD or Arrows
+                    glm::vec3 moveDir(0.0f);
+                    float yawR = glm::radians(fpYaw);
+                    glm::vec3 fwd = glm::normalize(glm::vec3(cosf(yawR), 0, sinf(yawR)));
+                    glm::vec3 rgt = glm::normalize(glm::cross(fwd, glm::vec3(0, 1, 0)));
+
+                    if(glfwGetKey(win, GLFW_KEY_W) || glfwGetKey(win, GLFW_KEY_UP))    moveDir += fwd;
+                    if(glfwGetKey(win, GLFW_KEY_S) || glfwGetKey(win, GLFW_KEY_DOWN))  moveDir -= fwd;
+                    if(glfwGetKey(win, GLFW_KEY_A) || glfwGetKey(win, GLFW_KEY_LEFT))  moveDir -= rgt;
+                    if(glfwGetKey(win, GLFW_KEY_D) || glfwGetKey(win, GLFW_KEY_RIGHT)) moveDir += rgt;
+
+                    if(glm::length(moveDir) > 0.1f) {
+                        moveDir = glm::normalize(moveDir);
+                        
+                        // Search for the best connected or aligned node in the move direction
+                        std::map<std::string, glm::vec3> id2P;
+                        std::vector<std::string> neighbors;
+                        glm::vec3 curP;
+                        
+                        for(auto& b : lv.blocks) for(auto& n : b.nodes) {
+                            glm::vec3 p = getNodeWorldPos(b, n, now);
+                            id2P[n.id] = p;
+                            if(n.id == player.currentNodeId) {
+                                curP = p;
+                                for(auto& c : n.connections) neighbors.push_back(c);
+                            }
+                        }
+
+                        std::string bestId = "";
+                        float bestDot = 0.45f; // Threshold to prevent moving to nodes behind/beside too much
+
+                        // 1. Check physical connections
+                        for(auto& nid : neighbors) {
+                            if(id2P.count(nid)) {
+                                glm::vec3 dir = glm::normalize(id2P[nid] - curP);
+                                float d = glm::dot(moveDir, dir);
+                                if(d > bestDot) { bestDot = d; bestId = nid; }
+                            }
+                        }
+                        // 2. Check perspective illusions (alignment)
+                        for(auto const& [id, pos] : id2P) {
+                            if(id != player.currentNodeId && checkAlignment(curP, pos, VP, W, H)) {
+                                glm::vec3 dir = glm::normalize(pos - curP);
+                                float d = glm::dot(moveDir, dir);
+                                if(d > bestDot) { bestDot = d; bestId = id; }
+                            }
+                        }
+
+                        if(bestId != "") player.movePath.push_back(bestId);
+                    }
+                } else if(mouseClick && camMode == CameraMode::ORBIT) {
+                    // Click-to-move only works in orbit mode
+                    glm::vec2 mNDC((mx/W)*2.f-1.f, -(((float)my/H)*2.f-1.f));
+                    float bestD = 0.1f; std::string bId = "";
+                    for(auto& b : lv.blocks) for(auto& n : b.nodes) {
+                        glm::vec4 sp = VP * glm::vec4(getNodeWorldPos(b, n, now), 1.f);
+                        if(sp.w > 0.0f) {
+                            float d = glm::distance(mNDC, glm::vec2(sp.x/sp.w, sp.y/sp.w));
+                            if(d < bestD) { bestD = d; bId = n.id; }
+                        }
+                    }
+                    if(bId != "") player.movePath = findPath(player.currentNodeId, bId, lv, now, VP);
                 }
-                if(bId != "") player.movePath = findPath(player.currentNodeId, bId, lv, now, VP);
-            }
             } // end PLAYING-only logic
-        // Draw Platforms
+
+            // ── Draw Platforms ───────────────────────────────────────────────
             illActive = false;
-            std::set<std::string> ill; 
-            std::map<std::string, glm::vec3> id2P; 
+            std::set<std::string> ill;
+            std::map<std::string, glm::vec3> id2P;
             std::map<std::string, glm::vec2> id2Screen;
             std::map<std::string, bool> id2Vis;
+
             for(auto& b : lv.blocks) {
                 for(auto& n : b.nodes) {
                     glm::vec3 p = getNodeWorldPos(b, n, now);
@@ -295,12 +435,13 @@ int main() {
                     if(sp.w > 0.0f) {
                         sp /= sp.w;
                         if(sp.z <= 1.0f && sp.z >= -1.0f) {
-                            id2Screen[n.id] = glm::vec2((sp.x * 0.5f + 0.5f) * W, (sp.y * 0.5f + 0.5f) * H);
+                            id2Screen[n.id] = glm::vec2((sp.x*0.5f+0.5f)*W, (sp.y*0.5f+0.5f)*H);
                             id2Vis[n.id] = true;
                         } else id2Vis[n.id] = false;
                     } else id2Vis[n.id] = false;
                 }
             }
+
             const float THRESH = 38.0f;
             for(auto const& [idA, posA] : id2P) {
                 if(!id2Vis[idA]) continue;
@@ -315,23 +456,25 @@ int main() {
                 }
             }
             illActive = !ill.empty();
+
             for(auto& b : lv.blocks) {
-                // Obstacle block: render as lava, skip normal logic
                 if(b.type == BlockType::OBSTACLE) {
-                    float pulse = 0.5f+0.5f*sinf(now*2.5f);
                     drawCube(gID, b.pos, b.scale, b.color, VP, true, 6, 0.f);
                     continue;
                 }
                 float rY = 0.f; bool isG = false; int mt = 0;
                 bool isStart = false;
-                if(b.type == BlockType::ROTATING) { float c=4.f; float p=fmodf(now,c)/c; rY=floorf(now/c)*(M_PI/2); if(p>0.75f) rY+=(pow((p-0.75f)*4,2)*(3-2*(p-0.75f)*4))*(M_PI/2); }
+                if(b.type == BlockType::ROTATING) {
+                    float c=4.f; float p=fmodf(now,c)/c;
+                    rY=floorf(now/c)*(float)(M_PI/2);
+                    if(p>0.75f) rY+=(powf((p-0.75f)*4.f,2.f)*(3.f-2.f*(p-0.75f)*4.f))*(float)(M_PI/2);
+                }
                 for(auto& n : b.nodes) {
                     if(ill.count(n.id)) isG = true;
                     if(n.id == lv.goalNodeId)  mt = 1;
                     if(n.id == lv.startNodeId) isStart = true;
                 }
                 if(isG && mt==0) mt = 4;
-                // Start platform: bright cyan (Minecraft diamond-block blue)
                 glm::vec3 drawCol = b.color;
                 if(isStart && mt == 0) {
                     drawCol = glm::vec3(0.0f, 0.85f, 1.0f);
@@ -339,14 +482,14 @@ int main() {
                 }
                 drawCube(gID, b.pos, b.scale, drawCol, VP, isG, mt, rY);
                 drawOutline(gID, b.pos, b.scale, VP, 0.03f, rY);
-                // Start beacon (blue)
                 for(auto& n : b.nodes) if(n.id == lv.startNodeId)
                     drawBeacon(gID, getNodeWorldPos(b,n,now), glm::vec3(0.4f,0.7f,1.f), now, VP);
-                // Goal beacon (green)
                 for(auto& n : b.nodes) if(n.id == lv.goalNodeId)
                     drawBeacon(gID, getNodeWorldPos(b,n,now), glm::vec3(0.2f,1.f,0.45f), now, VP, 2.2f);
             }
-            drawManFigure(gID, player.pos, now, VP);
+
+            // Draw player figure (hidden in FP mode — you ARE the player)
+            drawManFigure(gID, player.pos, now, VP, camMode == CameraMode::FIRST_PERSON);
 
             // ── Obstacle collision / damage ───────────────────────────────────
             if(appState == AppState::PLAYING) {
@@ -357,13 +500,15 @@ int main() {
                         if(now - lastDamageTime > 1.0f) {
                             playerHealth--;
                             lastDamageTime = now;
-                            // Red damage burst
                             for(int k=0;k<8;k++)
                                 spawnPart(player.pos+glm::vec3(0,0.4f,0),
                                     glm::vec3((rand()%100-50)*0.04f,0.8f+rand()%100*0.01f,(rand()%100-50)*0.04f),
                                     glm::vec3(1.f,0.2f,0.0f), 0.5f, 0.07f, PartType::SPARK);
                             if(playerHealth <= 0) {
                                 appState = AppState::DEAD;
+                                // Ensure cursor is released for UI
+                                glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                                glfwSetCursorPos(win, W / 2.0, H / 2.0);
                             }
                         }
                     }
@@ -372,53 +517,102 @@ int main() {
 
             // ── Season ambient particles ──────────────────────────────────────
             if(appState == AppState::PLAYING) {
-                if(season == 2) { // Rainy: blue-gray streaks
+                if(season == 2) { // Rain
                     for(int k=0;k<4;k++) {
                         glm::vec3 rp = player.pos + glm::vec3((rand()%40-20),6.f+rand()%4,(rand()%40-20));
                         spawnPart(rp,glm::vec3(0,-7.f,0),glm::vec3(0.5f,0.65f,1.f),0.28f,0.02f,PartType::AMBIENT);
                     }
-                } else if(season == 4) { // Winter: slow white snow
+                } else if(season == 4) { // Snow
                     for(int k=0;k<2;k++) {
                         glm::vec3 sp2 = player.pos + glm::vec3((rand()%40-20),7.f+rand()%4,(rand()%40-20));
                         spawnPart(sp2,glm::vec3((rand()%100-50)*0.01f,-0.7f,0),glm::vec3(1.f,1.f,1.f),2.5f,0.07f,PartType::AMBIENT);
                     }
+                } else if(season == 1) { // Spring: cherry blossoms falling
+                    if(rand()%3 == 0) {
+                        glm::vec3 bp = player.pos + glm::vec3((rand()%30-15),5.f+rand()%3,(rand()%30-15));
+                        spawnPart(bp,glm::vec3((rand()%100-50)*0.008f,-0.4f,(rand()%100-50)*0.008f),
+                                  glm::vec3(1.f,0.72f,0.80f),3.0f,0.04f,PartType::AMBIENT);
+                    }
+                } else if(season == 3) { // Autumn: falling leaves
+                    if(rand()%4 == 0) {
+                        glm::vec3 lp = player.pos + glm::vec3((rand()%30-15),5.f+rand()%3,(rand()%30-15));
+                        float r = (float)(rand()%100)/100.f;
+                        glm::vec3 leafCol = glm::mix(glm::vec3(0.9f,0.4f,0.05f), glm::vec3(0.8f,0.25f,0.1f), r);
+                        spawnPart(lp,glm::vec3((rand()%100-50)*0.012f,-0.5f,(rand()%100-50)*0.012f),
+                                  leafCol,2.5f,0.05f,PartType::AMBIENT);
+                    }
                 }
             }
 
-            // Render Particles
+            // ── Render Particles ──────────────────────────────────────────────
             for(int i=0; i<(int)particles.size(); i++) {
                 auto& p = particles[i]; p.pos += p.vel * dt; p.life -= dt;
                 if(p.life < 0) { particles.erase(particles.begin()+i); i--; continue; }
                 drawCube(gID, p.pos, glm::vec3(p.sz), p.col, VP, true, 5);
             }
+
+            // ── FP crosshair (tiny dot in center when in first-person) ────────
+            // (Drawn by UI layer below)
         }
+
+        // ── UI ───────────────────────────────────────────────────────────────
         ui.time = now;
         ScreenContext ctx{ui, currentLevel, appState, (std::vector<Level>&)levels,
                           mx, my, mouseClick, now, levelDone,
                           playerHealth, MAX_HEALTH, season, camMode};
         ui.beginFrame();
-        if(appState == AppState::HOME)         drawHome(ctx);
+        if     (appState == AppState::HOME)         drawHome(ctx);
         else if(appState == AppState::LEVEL_SELECT) drawLevelSelect(ctx);
-        else if(appState == AppState::PLAYING)  drawHUD(ctx, illActive, !player.movePath.empty());
-        else if(appState == AppState::COMPLETE) drawComplete(ctx);
-        else if(appState == AppState::INFO)     drawInfo(ctx);
+        else if(appState == AppState::PLAYING)      drawHUD(ctx, illActive, !player.movePath.empty());
+        else if(appState == AppState::COMPLETE)     drawComplete(ctx);
+        else if(appState == AppState::INFO)         drawInfo(ctx);
         else if(appState == AppState::DEAD) {
-            drawHUD(ctx, false, false); // keep world visible
+            drawHUD(ctx, false, false);
             drawDead(ctx);
-            if(appState == AppState::PLAYING) { // respawn pressed
-                loadLevel(currentLevel);
-            }
+            if(appState == AppState::PLAYING) loadLevel(currentLevel); // respawn
         }
         ui.endFrame();
-        if(appState == AppState::PLAYING && glfwGetKey(win, 82) == 1) loadLevel(currentLevel);
-        if(appState == AppState::PLAYING && glfwGetKey(win, 256) == 1) appState = AppState::HOME;
-        // V key (key=86) - toggle camera mode
+
+        // ── Hotkeys ──────────────────────────────────────────────────────────
+        // R – restart level
+        if(appState == AppState::PLAYING && glfwGetKey(win, 82) == 1)
+            loadLevel(currentLevel);
+        // ESC – back to home
+        if(appState == AppState::PLAYING && glfwGetKey(win, 256) == 1) {
+            // Make sure cursor is released on exit
+            glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            appState = AppState::HOME;
+        }
+
+        // V – toggle orbit ↔ first-person camera
         static bool vWasDown = false;
         bool vDown = (appState == AppState::PLAYING) && glfwGetKey(win, 86) == 1;
-        if(vDown && !vWasDown)
-            camMode = (camMode == CameraMode::ORBIT) ? CameraMode::FIRST_PERSON : CameraMode::ORBIT;
+        if(vDown && !vWasDown) {
+            if(camMode == CameraMode::ORBIT) {
+                // Switch TO first-person: Point towards the center of the level
+                camMode  = CameraMode::FIRST_PERSON;
+                glm::vec3 eye = player.pos + glm::vec3(0, 0.70f, 0);
+                glm::vec3 toPivot = glm::normalize(pivot - eye);
+                fpYaw    = glm::degrees(atan2f(toPivot.z, toPivot.x));
+                fpPitch  = glm::degrees(asinf(toPivot.y));
+                firstMouse = true;   // prevent mouse jump
+                glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            } else {
+                // Switch BACK to orbit
+                camMode  = CameraMode::ORBIT;
+                tgtYaw   = fpYaw;    // orbit picks up from where FP was looking
+                firstMouse = true;
+                glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+        }
         vWasDown = vDown;
-        mouseClick = false; glfwSwapBuffers(win); glfwPollEvents();
+
+        mouseClick = false;
+        glfwSwapBuffers(win);
+        glfwPollEvents();
     }
-    glfwTerminate(); return 0;
+
+    glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    glfwTerminate();
+    return 0;
 }
