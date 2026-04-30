@@ -1,0 +1,67 @@
+================================================================================
+                    PERSPECTIVE ILLUSION PUZZLE
+                         GAMEPLAY GUIDE
+================================================================================
+
+WELCOME TO THE ILLUSION
+Navigate impossible geometry using the power of perspective! In this game, 
+you must guide your character through 12 mind-bending levels where optical 
+illusions become reality. If two disconnected platforms look like they connect 
+from your camera angle, they DO connect. 
+
+================================================================================
+1. CORE MECHANICS
+================================================================================
+* MOVEMENT: Click on any adjacent platform to walk to it.
+* PERSPECTIVE JUMPS: Rotate the camera until two disconnected platforms 
+  overlap perfectly on your screen. When they align, they will glow GOLD. 
+  You can now click across the gap as if they were physically connected!
+* ROTATING BLOCKS: Some levels feature platforms that rotate over time. 
+  Time your movements and camera angles to cross them.
+* FIRST-PERSON MODE: Press 'V' to enter an immersive first-person view. 
+  Experience the impossible geometry from the ground level!
+
+================================================================================
+2. CONTROLS
+================================================================================
+[Mouse]
+* Left-Click & Drag : Orbit the camera around the level
+* Scroll Wheel      : Zoom in / Zoom out
+* Left-Click        : Move the player to the targeted platform
+
+[Keyboard]
+* V                 : Toggle First-Person Camera Mode
+* R                 : Restart the current level
+* Esc               : Return to the Main Menu
+* W/A/S/D or Arrows : Move while in First-Person Mode
+
+================================================================================
+3. PLATFORM TYPES & HAZARDS
+================================================================================
+* Start Node        : Blue glowing beacon. This is where you begin the level.
+* Goal Node         : Green glowing runes. Reach this to complete the level.
+* Aligned Node      : Gold glow. Indicates a successful perspective illusion.
+* Standard Pillar   : Safe platform you can walk on.
+* Obstacles         : Avoid getting too close! Taking damage reduces your 
+                      health (maximum 3 hearts). Lose all health and you will 
+                      die and have to respawn.
+
+================================================================================
+4. LEVEL PROGRESSION & HINTS
+================================================================================
+Level 1  - Basics: Click adjacent platforms to walk.
+Level 2  - The Illusion: Rotate camera until platforms overlap.
+Level 3  - Spiral: Follow the spiral staircase upwards.
+Level 4  - Leap: A leap of faith — align from afar.
+Level 5  - Palace: Multi-floor palace — climb and bridge.
+Level 6  - Clockwork: Sync with the clockwork rotation.
+Level 7  - Double Jump: Two illusion jumps required.
+Level 8  - Bridge: Ascend stairs, cross the rotating bridge.
+Level 9  - The Chain: Chain three illusions to escape.
+Level 10 - Crystal Maze: Mind the altitude gap.
+Level 11 - Garden: Float across two garden terraces.
+Level 12 - Ancient Temple: Find the hidden altar.
+
+================================================================================
+                           ENJOY THE PUZZLE!
+================================================================================

@@ -18,8 +18,6 @@
 #include "screens.h"
 
 int W=1280, H=720; // set from monitor at runtime
-
-// ── Orbit camera state ────────────────────────────────────────────────────────
 float camYaw=-135.f, camPitch=38.f, camRadius=16.f;
 float tgtYaw=-135.f, tgtPitch=38.f, tgtRadius=16.f; // smooth lerp targets
 
@@ -557,6 +555,8 @@ int main() {
 
         // ── UI ───────────────────────────────────────────────────────────────
         ui.time = now;
+        AppState prevState = appState;
+        int prevLevel = currentLevel;
         ScreenContext ctx{ui, currentLevel, appState, (std::vector<Level>&)levels,
                           mx, my, mouseClick, now, levelDone,
                           playerHealth, MAX_HEALTH, season, camMode};
@@ -569,9 +569,12 @@ int main() {
         else if(appState == AppState::DEAD) {
             drawHUD(ctx, false, false);
             drawDead(ctx);
-            if(appState == AppState::PLAYING) loadLevel(currentLevel); // respawn
         }
         ui.endFrame();
+
+        if (appState == AppState::PLAYING && (prevState != AppState::PLAYING || prevLevel != currentLevel)) {
+            loadLevel(currentLevel);
+        }
 
         // ── Hotkeys ──────────────────────────────────────────────────────────
         // R – restart level
